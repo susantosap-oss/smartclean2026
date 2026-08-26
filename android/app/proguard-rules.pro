@@ -1,0 +1,6 @@
+-keep class com.getcapacitor.** { *; }
+-keep class com.smartclean.app.** { *; }
+-keepattributes *Annotation*
+-keepattributes SourceFile,LineNumberTable
+-dontwarn okhttp3.**
+-dontwarn okio.**

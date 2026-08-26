@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SmartClean</string>
+    <string name="title_activity_main">SmartClean</string>
+    <string name="package_name">com.smartclean.app</string>
+    <string name="custom_url_scheme">com.smartclean.app</string>
+</resources>

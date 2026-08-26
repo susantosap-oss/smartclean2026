@@ -1,0 +1,21 @@
+{
+  "name": "smartclean",
+  "version": "1.0.0",
+  "description": "SmartClean - Android Phone Cleaner & Optimizer",
+  "scripts": {
+    "sync": "npx cap sync android",
+    "open": "npx cap open android",
+    "build:debug": "cd android && gradlew.bat assembleDebug",
+    "build:release": "cd android && gradlew.bat assembleRelease"
+  },
+  "dependencies": {
+    "@capacitor/android": "^5.7.2",
+    "@capacitor/core": "^5.7.2",
+    "@capacitor/filesystem": "^5.2.1",
+    "@capacitor/app": "^5.0.8",
+    "@capacitor/device": "^5.0.8"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^5.7.2"
+  }
+}
