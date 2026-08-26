@@ -11,6 +11,7 @@ import com.getcapacitor.BridgeActivity;
 import com.smartclean.app.plugins.FileCleanerPlugin;
 import com.smartclean.app.plugins.MemoryBoosterPlugin;
 import com.smartclean.app.plugins.DuplicateFinderPlugin;
+import com.smartclean.app.plugins.AppManagerPlugin;
 
 public class MainActivity extends BridgeActivity {
 
@@ -19,6 +20,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(FileCleanerPlugin.class);
         registerPlugin(MemoryBoosterPlugin.class);
         registerPlugin(DuplicateFinderPlugin.class);
+        registerPlugin(AppManagerPlugin.class);
         super.onCreate(savedInstanceState);
         requestManageStoragePermission();
         requestUsageAccessPermission();

@@ -324,8 +324,6 @@ html, body {
 .btn-defrag:active { transform: scale(.98); }
 .btn-defrag-icon { font-size: 22px; }
 .btn-defrag.active-op { border-color: var(--green); }
-.btn-defrag.restart { border-color: rgba(255,82,82,.3); color: var(--red); }
-.btn-defrag.restart:active { border-color: var(--red); }
 
 .defrag-log {
   margin-top: 16px;
@@ -475,22 +473,40 @@ html, body {
 }
 .btn-scan-adv:active { background: var(--bg2); }
 
-/* File List */
-.file-list { display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; }
+/* File List — native-Android-gallery-style rows (real thumbnails, list layout) */
+.file-list { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto; }
 .file-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px;
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 12px;
   background: var(--bg3);
   border-radius: 10px;
   cursor: pointer;
   transition: background .15s;
 }
 .file-item.selected { background: rgba(0,200,83,.12); }
-.fi-thumb { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; background: var(--bg2); flex-shrink: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+.fi-thumb {
+  width: 56px; height: 56px; border-radius: 10px;
+  background: var(--bg2); flex-shrink: 0; position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: center; font-size: 22px;
+}
+.fi-thumb-fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+.fi-thumb-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .25s; }
+.fi-thumb-img.loaded { opacity: 1; }
+.fi-play-badge {
+  position: absolute; right: 4px; bottom: 4px; z-index: 1;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: rgba(0,0,0,.6); color: #fff; font-size: 8px;
+  display: flex; align-items: center; justify-content: center;
+}
+.fi-icon-document { background: rgba(255,152,0,.14); }
+.fi-icon-audio { background: rgba(186,104,200,.14); }
 .fi-body { flex: 1; min-width: 0; }
 .fi-name { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.fi-date { font-size: 11px; color: var(--text2); margin-top: 2px; }
+.fi-date { font-size: 11px; color: var(--text2); margin-top: 3px; display: flex; align-items: center; gap: 6px; }
 .fi-size { font-size: 12px; color: var(--text2); }
+.fi-source-badge { padding: 1px 6px; border-radius: 999px; font-size: 9px; font-weight: 700; line-height: 1.5; }
+.fi-source-badge.fi-source-whatsapp { background: rgba(37,211,102,.16); color: #25D366; }
+.fi-source-badge.fi-source-whatsapp_business { background: rgba(37,150,190,.16); color: #2596be; }
 .fi-check {
   width: 20px; height: 20px; border-radius: 5px;
   border: 2px solid var(--border);
@@ -499,6 +515,28 @@ html, body {
 }
 .file-item.selected .fi-check { background: var(--green); border-color: var(--green); }
 .fi-check::after { content: '✓'; font-size: 11px; color: #fff; }
+
+/* App icon thumb (Unused App Cleaner) — real launcher icon, no crossfade needed */
+.fi-thumb-app { background: var(--bg2); }
+.fi-thumb-app .fi-thumb-img { position: static; width: 100%; height: 100%; opacity: 1; object-fit: contain; padding: 6px; box-sizing: border-box; }
+
+/* Remove Ads (Private DNS) */
+.ads-desc { font-size: 12.5px; color: var(--text2); line-height: 1.6; margin: 0 0 14px; }
+.ads-dns-row { margin-bottom: 14px; }
+.ads-dns-label { font-size: 11px; color: var(--text2); display: block; margin-bottom: 6px; }
+.ads-dns-box {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px;
+}
+.ads-dns-box code { font-size: 13px; color: var(--green2); font-family: monospace; word-break: break-all; }
+.btn-copy {
+  flex-shrink: 0; background: var(--bg2); border: 1px solid var(--border); color: var(--text);
+  font-size: 11px; font-weight: 600; border-radius: 8px; padding: 6px 12px; cursor: pointer;
+}
+.btn-copy:active { background: var(--bg3); }
+.ads-steps { margin: 0 0 14px; padding-left: 20px; font-size: 12.5px; color: var(--text2); line-height: 1.8; }
+.ads-steps b { color: var(--text); }
 
 /* Browser List */
 .browser-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }

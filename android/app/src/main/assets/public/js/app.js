@@ -7,9 +7,10 @@ if (window.Capacitor) {
   const _ph = window.Capacitor.PluginHeaders || [];
   const _pm = n => n.map(name => ({ name, rtype: 'promise' }));
   _ph.push(
-    { name: 'MemoryBooster',    methods: _pm(['getStorageStats','getMemoryStats','boostMemory','optimizeStorage','getRunningApps','stopApps','getBatteryInfo','restartDevice']) },
+    { name: 'MemoryBooster',    methods: _pm(['getStorageStats','getMemoryStats','boostMemory','optimizeStorage','getRunningApps','stopApps','getBatteryInfo']) },
     { name: 'FileCleaner',      methods: _pm(['scanJunkFiles','cleanJunkFiles','deleteFiles','scanWAMedia','scanCameraMedia','scanBrowserCache','clearBrowserCache','clearNotifications']) },
     { name: 'DuplicateFinder',  methods: _pm(['scanDuplicates','deleteFiles']) },
+    { name: 'AppManager',       methods: _pm(['scanUnusedApps','uninstallApp','openNetworkSettings']) },
   );
   window.Capacitor.PluginHeaders = _ph;
 }
@@ -19,6 +20,7 @@ const { registerPlugin } = window.Capacitor || {};
 const FileCleaner   = registerPlugin ? registerPlugin('FileCleaner')   : null;
 const MemoryBooster = registerPlugin ? registerPlugin('MemoryBooster') : null;
 const DupFinder     = registerPlugin ? registerPlugin('DuplicateFinder') : null;
+const AppManager    = registerPlugin ? registerPlugin('AppManager')    : null;
 const AppPlugin     = registerPlugin ? registerPlugin('App') : null;
 
 // ── Demo state (simulated values for browser preview) ──
@@ -268,7 +270,7 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
 // ════════════════════════════════════════
 const CLEAN_ITEMS = [
   { id:'tmp',     icon:'🗂️',  title:'Temporary Files',     sub:'tmp · temp · thumbs',    type:'TMP' },
-  { id:'msg',     icon:'💬',  title:'WA Database (.msg)',   sub:'Sisakan file terbaru',    type:'MSG' },
+  { id:'msg',     icon:'💬',  title:'WA Database (.crypt14)',   sub:'Sisakan file terbaru',    type:'MSG' },
   { id:'junk',    icon:'🗑️',  title:'Junk & Ad Files',     sub:'ads · cache · residual',  type:'JUNK' },
   { id:'appcache',icon:'📦',  title:'App Cache',           sub:'Semua cache aplikasi',    type:'APPCACHE' },
   { id:'browser', icon:'🌐',  title:'Browser Cache',       sub:'Chrome · Firefox · etc',  type:'BROWSER' },
@@ -541,28 +543,6 @@ document.getElementById('btnBoost').addEventListener('click', async () => {
   }
 });
 
-document.getElementById('btnRestart').addEventListener('click', () => {
-  showModal('Restart Perangkat', 'Simpan semua pekerjaan Anda. Perangkat akan di-restart.', async () => {
-    const btn = document.getElementById('btnRestart');
-    btn.disabled = true;
-    btn.querySelector('span:last-child').textContent = 'Restarting…';
-    showOpProgress();
-    try {
-      if (MemoryBooster) {
-        await MemoryBooster.restartDevice();
-      }
-    } catch(e) {
-      // App tidak bisa restart otomatis (bukan system app) — tampilkan instruksi manual
-      hideOpProgress();
-      btn.disabled = false;
-      btn.querySelector('span:last-child').textContent = 'Restart Perangkat';
-      showModal('Restart Manual',
-        'Aplikasi tidak dapat restart otomatis.\n\nTekan tombol Power → tahan → pilih "Restart" atau "Mulai Ulang".',
-        null);
-    }
-  });
-});
-
 // ════════════════════════════════════════
 //  BATTERY SECTION
 // ════════════════════════════════════════
@@ -696,6 +676,79 @@ window.toggleAdv = function(key) {
   if (chev) chev.classList.toggle('open', open);
 };
 
+// ── Media file-list rendering (shared: WhatsApp Cleaner + Camera/Gallery Cleaner) ──
+// Native-Android-gallery-style rows: real photo/video thumbnails (lazy-loaded via
+// IntersectionObserver so a long list doesn't decode every file at once), file-type
+// icons for Dokumen/Audio, and a WA/WA Business source badge where applicable.
+const FI_TYPE_ICON  = { video:'🎬', image:'🖼️', screenshot:'📸', document:'📄', audio:'🎵' };
+const FI_DOC_ICON   = { pdf:'📕', doc:'📘', docx:'📘', xls:'📗', xlsx:'📗', ppt:'📙', pptx:'📙', txt:'📄' };
+const FI_AUDIO_ICON = { mp3:'🎵', opus:'🎵', ogg:'🎵', aac:'🎵', m4a:'🎵' };
+const FI_SOURCE_LABEL = { whatsapp: 'WhatsApp', whatsapp_business: 'WA Business' };
+
+const _fiThumbObserver = ('IntersectionObserver' in window) ? new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (!entry.isIntersecting) return;
+    const el = entry.target;
+    _fiThumbObserver.unobserve(el);
+    const src = el.dataset.src;
+    if (!src) return;
+    el.src = src;
+    if (el.tagName === 'VIDEO') el.load();
+  });
+}, { rootMargin: '250px 0px' }) : null;
+
+function fiMediaSrc(path) {
+  return (window.Capacitor && Capacitor.convertFileSrc) ? Capacitor.convertFileSrc(path) : path;
+}
+
+function fiTypeIcon(f, type) {
+  const ext = (f.name.split('.').pop() || '').toLowerCase();
+  if (type === 'document' && FI_DOC_ICON[ext])   return FI_DOC_ICON[ext];
+  if (type === 'audio'    && FI_AUDIO_ICON[ext]) return FI_AUDIO_ICON[ext];
+  return FI_TYPE_ICON[type] || '📎';
+}
+
+function fiThumbHtml(f, type) {
+  const fallback = fiTypeIcon(f, type);
+  if (type === 'image' || type === 'screenshot') {
+    return `<div class="fi-thumb fi-thumb-media">
+      <span class="fi-thumb-fallback">${fallback}</span>
+      <img class="fi-thumb-img" data-src="${fiMediaSrc(f.path)}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">
+    </div>`;
+  }
+  if (type === 'video') {
+    return `<div class="fi-thumb fi-thumb-media">
+      <span class="fi-thumb-fallback">${fallback}</span>
+      <video class="fi-thumb-img" data-src="${fiMediaSrc(f.path)}" muted preload="none" playsinline onloadeddata="this.classList.add('loaded')" onerror="this.remove()"></video>
+      <span class="fi-play-badge">▶</span>
+    </div>`;
+  }
+  return `<div class="fi-thumb fi-icon fi-icon-${type}">${fallback}</div>`;
+}
+
+function fiItemHtml(f, type, selected) {
+  const badge = f.source ? `<span class="fi-source-badge fi-source-${f.source}">${FI_SOURCE_LABEL[f.source] || ''}</span>` : '';
+  return `
+    <div class="file-item${selected?' selected':''}" data-path="${encodeURIComponent(f.path)}">
+      ${fiThumbHtml(f, type)}
+      <div class="fi-body">
+        <div class="fi-name">${f.name}</div>
+        <div class="fi-date">${fmtDate(f.dateMs)}${badge}</div>
+      </div>
+      <div class="fi-size">${fmt(f.size)}</div>
+      <div class="fi-check"></div>
+    </div>`;
+}
+
+function fiObserveThumbs(container) {
+  const thumbs = container.querySelectorAll('.fi-thumb-img[data-src]');
+  if (!_fiThumbObserver) {
+    thumbs.forEach(el => { el.src = el.dataset.src; if (el.tagName === 'VIDEO') el.load(); });
+    return;
+  }
+  thumbs.forEach(el => _fiThumbObserver.observe(el));
+}
+
 // ── WhatsApp ──────────────────────────────────────────────────────────────────
 let waFiles = [], waSelected = new Set(), waCurrentType = 'video';
 
@@ -723,12 +776,17 @@ async function scanWA() {
     } else {
       const exts = { video:'.mp4', image:'.jpg', document:'.pdf', audio:'.opus' };
       const ext  = exts[waCurrentType] || '.bin';
-      waFiles = Array.from({length:18}, (_,i) => ({
-        name: `WA_${waCurrentType}_${String(i+1).padStart(3,'0')}${ext}`,
-        path: `/storage/emulated/0/WhatsApp/Media/WhatsApp ${waCurrentType.charAt(0).toUpperCase()+waCurrentType.slice(1)}/${i+1}${ext}`,
-        size: Math.floor(Math.random()*50+1)*1024*1024,
-        dateMs: Date.now() - Math.floor(Math.random()*250+1)*24*3600*1000,
-      }));
+      waFiles = Array.from({length:18}, (_,i) => {
+        const source = i % 3 === 0 ? 'whatsapp_business' : 'whatsapp';
+        const appDir = source === 'whatsapp_business' ? 'WhatsApp Business' : 'WhatsApp';
+        return {
+          name: `WA_${waCurrentType}_${String(i+1).padStart(3,'0')}${ext}`,
+          path: `/storage/emulated/0/${appDir}/Media/${appDir} ${waCurrentType.charAt(0).toUpperCase()+waCurrentType.slice(1)}/${i+1}${ext}`,
+          size: Math.floor(Math.random()*50+1)*1024*1024,
+          dateMs: Date.now() - Math.floor(Math.random()*250+1)*24*3600*1000,
+          source,
+        };
+      });
       await new Promise(r => setTimeout(r, 900));
     }
     renderWAFiles();
@@ -750,7 +808,6 @@ function renderWAFiles() {
   const cutoff  = Date.now() - months * 30 * 24 * 3600 * 1000;
   const eligible = waFiles.filter(f => f.dateMs < cutoff);
   const list = document.getElementById('waFileList');
-  const emojiMap = { video:'🎬', image:'🖼️', document:'📄', audio:'🎵' };
 
   if (!eligible.length) {
     list.innerHTML = '<div class="empty-state" style="padding:16px">Tidak ada file lama</div>';
@@ -758,16 +815,8 @@ function renderWAFiles() {
     return;
   }
   const totalSz = eligible.reduce((s,f) => s+f.size, 0);
-  list.innerHTML = eligible.map(f => `
-    <div class="file-item${waSelected.has(f.path)?' selected':''}" data-path="${encodeURIComponent(f.path)}">
-      <div class="fi-thumb">${emojiMap[waCurrentType]||'📎'}</div>
-      <div class="fi-body">
-        <div class="fi-name">${f.name}</div>
-        <div class="fi-date">${fmtDate(f.dateMs)}</div>
-      </div>
-      <div class="fi-size">${fmt(f.size)}</div>
-      <div class="fi-check"></div>
-    </div>`).join('');
+  list.innerHTML = eligible.map(f => fiItemHtml(f, waCurrentType, waSelected.has(f.path))).join('');
+  fiObserveThumbs(list);
 
   list.querySelectorAll('.file-item').forEach(el => {
     el.addEventListener('click', () => {
@@ -941,7 +990,6 @@ function renderCamFiles() {
   const cutoff  = Date.now() - months * 30 * 24 * 3600 * 1000;
   const eligible = camFiles.filter(f => f.dateMs < cutoff);
   const list = document.getElementById('camFileList');
-  const emojiMap = { video:'🎬', image:'🖼️', screenshot:'📸' };
 
   if (!eligible.length) {
     list.innerHTML = '<div class="empty-state" style="padding:16px">Tidak ada file lama</div>';
@@ -949,16 +997,8 @@ function renderCamFiles() {
     return;
   }
   const totalSz = eligible.reduce((s,f) => s+f.size, 0);
-  list.innerHTML = eligible.map(f => `
-    <div class="file-item${camSelected.has(f.path)?' selected':''}" data-path="${encodeURIComponent(f.path)}">
-      <div class="fi-thumb">${emojiMap[camCurrentType]||'📁'}</div>
-      <div class="fi-body">
-        <div class="fi-name">${f.name}</div>
-        <div class="fi-date">${fmtDate(f.dateMs)}</div>
-      </div>
-      <div class="fi-size">${fmt(f.size)}</div>
-      <div class="fi-check"></div>
-    </div>`).join('');
+  list.innerHTML = eligible.map(f => fiItemHtml(f, camCurrentType, camSelected.has(f.path))).join('');
+  fiObserveThumbs(list);
 
   list.querySelectorAll('.file-item').forEach(el => {
     el.addEventListener('click', () => {
@@ -1152,6 +1192,147 @@ document.getElementById('btnDeleteDup').addEventListener('click', async () => {
   });
 });
 
+// ── Unused App Cleaner ──────────────────────────────────────────────────────────
+let unusedApps = [], unusedSelected = new Set();
+
+function fmtLastUsed(ms, neverUsed) {
+  if (neverUsed || !ms) return 'Belum pernah dipakai';
+  const days = Math.floor((Date.now() - ms) / (24*3600*1000));
+  if (days < 30) return `${days} hari lalu`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months} bulan lalu`;
+  return `${(months/12).toFixed(1)} tahun lalu`;
+}
+
+async function scanUnusedApps() {
+  const btn = document.getElementById('btnScanUnused');
+  btn.textContent = '⏳ Scanning…';
+  btn.disabled = true;
+  unusedApps = []; unusedSelected.clear();
+  closeResultPanel();
+  try {
+    if (AppManager) {
+      const res = await AppManager.scanUnusedApps();
+      unusedApps = res.apps || [];
+    } else {
+      unusedApps = Array.from({length:6}, (_,i) => ({
+        pkg: `com.demo.unused${i}`,
+        name: `Demo App ${i+1}`,
+        iconBase64: '',
+        sizeBytes: Math.floor(Math.random()*300+20)*1024*1024,
+        lastUsedMs: i % 2 === 0 ? Date.now() - (200+i*40)*24*3600*1000 : 0,
+        neverUsed: i % 2 !== 0,
+      }));
+      await new Promise(r => setTimeout(r, 900));
+    }
+    unusedApps.sort((a,b) => (a.lastUsedMs||0) - (b.lastUsedMs||0));
+    renderUnusedApps();
+    toast(unusedApps.length
+      ? `Ditemukan ${unusedApps.length} aplikasi jarang dipakai`
+      : 'Semua aplikasi masih aktif dipakai');
+  } catch(e) {
+    toast('Scan error: ' + e.message, 'error');
+  } finally {
+    btn.textContent = '🔍 Scan Aplikasi Jarang Dipakai';
+    btn.disabled = false;
+  }
+}
+
+function renderUnusedApps() {
+  const list = document.getElementById('unusedFileList');
+  if (!unusedApps.length) {
+    list.innerHTML = '<div class="empty-state" style="padding:16px">Semua aplikasi masih aktif dipakai 👍</div>';
+    document.getElementById('unusedActions').style.display = 'none';
+    document.getElementById('unusedSub').textContent = 'App tidak dipakai > 6 bulan';
+    return;
+  }
+  const totalSz = unusedApps.reduce((s,a) => s+a.sizeBytes, 0);
+  list.innerHTML = unusedApps.map(a => `
+    <div class="file-item${unusedSelected.has(a.pkg)?' selected':''}" data-pkg="${encodeURIComponent(a.pkg)}">
+      <div class="fi-thumb fi-thumb-app">
+        ${a.iconBase64
+          ? `<img class="fi-thumb-img loaded" src="${a.iconBase64}" alt="">`
+          : '<span class="fi-thumb-fallback">📱</span>'}
+      </div>
+      <div class="fi-body">
+        <div class="fi-name">${a.name}</div>
+        <div class="fi-date">${fmtLastUsed(a.lastUsedMs, a.neverUsed)}</div>
+      </div>
+      <div class="fi-size">${fmt(a.sizeBytes)}</div>
+      <div class="fi-check"></div>
+    </div>`).join('');
+
+  list.querySelectorAll('.file-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const pkg = decodeURIComponent(el.dataset.pkg);
+      if (unusedSelected.has(pkg)) { unusedSelected.delete(pkg); el.classList.remove('selected'); }
+      else                          { unusedSelected.add(pkg);   el.classList.add('selected'); }
+    });
+  });
+  document.getElementById('unusedActions').style.display = 'flex';
+  document.getElementById('unusedSub').textContent = `${unusedApps.length} app · ${fmt(totalSz)}`;
+}
+
+document.getElementById('btnScanUnused').addEventListener('click', scanUnusedApps);
+document.getElementById('btnSelectAllUnused').addEventListener('click', () => {
+  const allSel = unusedSelected.size === unusedApps.length;
+  unusedSelected.clear();
+  if (!allSel) unusedApps.forEach(a => unusedSelected.add(a.pkg));
+  renderUnusedApps();
+});
+document.getElementById('btnUninstallUnused').addEventListener('click', async () => {
+  if (!unusedSelected.size) { toast('Pilih minimal 1 aplikasi', 'error'); return; }
+  const pkgs  = [...unusedSelected];
+  const names = unusedApps.filter(a => pkgs.includes(a.pkg)).map(a => a.name).join(', ');
+
+  showModal('Uninstall Aplikasi',
+    `Uninstall ${pkgs.length} aplikasi: ${names}?\n\nSistem Android akan meminta konfirmasi terpisah untuk tiap aplikasi.`,
+    async () => {
+      const btn = document.getElementById('btnUninstallUnused');
+      btn.disabled = true;
+      let uninstalled = 0;
+      try {
+        for (const pkg of pkgs) {
+          if (AppManager) {
+            try {
+              const res = await AppManager.uninstallApp({ packageName: pkg });
+              if (res.success) uninstalled++;
+            } catch (e) { /* user membatalkan dialog uninstall untuk app ini, lanjut ke berikutnya */ }
+          } else {
+            uninstalled++;
+            await new Promise(r => setTimeout(r, 400));
+          }
+        }
+        unusedSelected.clear();
+        await scanUnusedApps(); // re-scan supaya list mencerminkan state OS sebenarnya
+        toast(`${uninstalled}/${pkgs.length} aplikasi berhasil di-uninstall`);
+      } catch(e) {
+        toast('Uninstall error: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+});
+
+// ── Remove Ads (Private DNS ad-block shortcut) ────────────────────────────────
+document.getElementById('btnCopyDns').addEventListener('click', async () => {
+  const host = document.getElementById('adsDnsHost').textContent.trim();
+  try {
+    await navigator.clipboard.writeText(host);
+    toast('Hostname DNS disalin');
+  } catch (e) {
+    toast('Gagal menyalin: ' + e.message, 'error');
+  }
+});
+document.getElementById('btnOpenDnsSettings').addEventListener('click', async () => {
+  try {
+    if (AppManager) await AppManager.openNetworkSettings();
+    else toast('Buka Settings > Network & Internet > Private DNS secara manual');
+  } catch (e) {
+    toast('Tidak bisa membuka pengaturan: ' + e.message, 'error');
+  }
+});
+
 // ════════════════════════════════════════
 //  STORAGE INFO (Header)
 // ════════════════════════════════════════
@@ -1195,7 +1376,7 @@ window.handleBackButton = function handleBackButton() {
   }
 
   // Priority 3 — collapse accordion Advanced yang terbuka
-  const advKeys = ['wa', 'browser', 'camera', 'dup'];
+  const advKeys = ['wa', 'browser', 'camera', 'dup', 'unused', 'ads'];
   for (const key of advKeys) {
     const body = document.getElementById(key + 'Body');
     if (body && !body.classList.contains('hidden')) {

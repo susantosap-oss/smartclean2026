@@ -146,10 +146,6 @@
           <span class="btn-defrag-icon">🚀</span>
           <span>Boost Memory (RAM)</span>
         </button>
-        <button class="btn-defrag restart" id="btnRestart">
-          <span class="btn-defrag-icon">🔄</span>
-          <span>Restart Perangkat</span>
-        </button>
       </div>
 
       <div class="defrag-log" id="defragLog"></div>
@@ -201,7 +197,7 @@
           </div>
           <div class="adv-title-wrap">
             <div class="adv-title">WhatsApp Cleaner</div>
-            <div class="adv-sub" id="waSub">Video, Foto, Dokumen</div>
+            <div class="adv-sub" id="waSub">WhatsApp &amp; WhatsApp Business</div>
           </div>
           <div class="adv-chevron" id="chevWa">▼</div>
         </div>
@@ -314,6 +310,59 @@
             <button class="btn-secondary" id="btnAutoSelectDup">Auto Select</button>
             <button class="btn-primary" id="btnDeleteDup">🗑 Delete Duplicates</button>
           </div>
+        </div>
+      </div>
+
+      <!-- Unused App Cleaner -->
+      <div class="adv-card" id="advUnused">
+        <div class="adv-header" onclick="toggleAdv('unused')">
+          <div class="adv-icon">📱</div>
+          <div class="adv-title-wrap">
+            <div class="adv-title">Unused App Cleaner</div>
+            <div class="adv-sub" id="unusedSub">App tidak dipakai &gt; 6 bulan</div>
+          </div>
+          <div class="adv-chevron" id="chevUnused">▼</div>
+        </div>
+        <div class="adv-body hidden" id="unusedBody">
+          <button class="btn-scan-adv" id="btnScanUnused">🔍 Scan Aplikasi Jarang Dipakai</button>
+          <div id="unusedFileList" class="file-list"></div>
+          <div class="action-row" id="unusedActions" style="display:none">
+            <button class="btn-secondary" id="btnSelectAllUnused">Select All</button>
+            <button class="btn-primary" id="btnUninstallUnused">🗑 Uninstall Terpilih</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Remove Ads (system-wide Private DNS ad block) -->
+      <div class="adv-card" id="advAds">
+        <div class="adv-header" onclick="toggleAdv('ads')">
+          <div class="adv-icon">🚫</div>
+          <div class="adv-title-wrap">
+            <div class="adv-title">Remove Ads</div>
+            <div class="adv-sub">Blokir iklan di semua app &amp; browser</div>
+          </div>
+          <div class="adv-chevron" id="chevAds">▼</div>
+        </div>
+        <div class="adv-body hidden" id="adsBody">
+          <p class="ads-desc">
+            Aktifkan <b>Private DNS</b> bawaan Android dan arahkan ke DNS anti-iklan.
+            Ini memblokir sebagian besar iklan (banner, popup, video ads) di semua
+            aplikasi &amp; browser sekaligus di level jaringan &mdash; tanpa root, tanpa
+            aplikasi VPN tambahan.
+          </p>
+          <div class="ads-dns-row">
+            <span class="ads-dns-label">Hostname DNS anti-iklan</span>
+            <div class="ads-dns-box">
+              <code id="adsDnsHost">dns.adguard-dns.com</code>
+              <button class="btn-copy" id="btnCopyDns">Salin</button>
+            </div>
+          </div>
+          <ol class="ads-steps">
+            <li>Tap <b>Buka Pengaturan Jaringan</b> di bawah</li>
+            <li>Masuk ke <b>Network &amp; Internet → Private DNS</b> (nama menu bisa sedikit berbeda tiap merk HP)</li>
+            <li>Pilih <b>Hostname penyedia DNS pribadi</b>, tempel hostname di atas, lalu Simpan</li>
+          </ol>
+          <button class="btn-scan-adv" id="btnOpenDnsSettings">⚙️ Buka Pengaturan Jaringan</button>
         </div>
       </div>
 

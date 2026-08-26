@@ -24,12 +24,19 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @CapacitorPlugin(name = "FileCleaner")
 public class FileCleanerPlugin extends Plugin {
 
     private static final String TAG = "FileCleanerPlugin";
+
+    // Recursion cap for storage traversal. Real-device WhatsApp / WhatsApp Business
+    // paths (esp. scoped-storage layout under Android/media/<pkg>/.../Shared) can
+    // nest deeper than a shallow cap allows, silently hiding files below it.
+    private static final int MAX_SCAN_DEPTH = 14;
 
     // ─── Extensions ───────────────────────────────────────────────────────────
     private static final List<String> TMP_EXT = Arrays.asList(
@@ -49,9 +56,21 @@ public class FileCleanerPlugin extends Plugin {
     private static final List<String> GAME_KEYWORDS = Arrays.asList(
         "game", "games", "play", "pubg", "mlbb", "freefire", "codm", "clash"
     );
-    private static final List<String> WA_DIRS = Arrays.asList(
-        "WhatsApp/Media", "WhatsApp Business/Media", "Whatsapp/Media"
-    );
+    // WhatsApp / WhatsApp Business media roots. On Android 11+ (scoped storage)
+    // both apps write under Android/media/<pkg>/..., not the legacy top-level
+    // "WhatsApp/Media" path — devices can have either layout depending on the
+    // OS version / WA version, so both are checked. Each entry is
+    // { mediaRootRelativeToExternalStorage, subfolderNamePrefix, sourceLabel }.
+    private static final String[][] WA_APPS = {
+        { "WhatsApp/Media",                                          "WhatsApp",          "whatsapp" },
+        { "Whatsapp/Media",                                          "WhatsApp",          "whatsapp" },
+        { "Android/media/com.whatsapp/WhatsApp/Media",               "WhatsApp",          "whatsapp" },
+        { "WhatsApp Business/Media",                                 "WhatsApp Business", "whatsapp_business" },
+        { "Android/media/com.whatsapp.w4b/WhatsApp Business/Media",  "WhatsApp Business", "whatsapp_business" },
+    };
+    // WhatsApp / WhatsApp Business encrypted DB backups (WhatsApp/Database(s) &
+    // WhatsApp Business/Database(s)), e.g. "msgstore-2026-08-25.1.db.crypt14".
+    private static final String DB_BACKUP_EXT = ".db.crypt14";
 
     // ─── Scan All Junk ────────────────────────────────────────────────────────
     @PluginMethod
@@ -60,7 +79,7 @@ public class FileCleanerPlugin extends Plugin {
         new Thread(() -> {
             try {
                 long tmpSize    = scanTmpFiles();
-                long msgSize    = scanMsgFiles();
+                long msgSize    = scanDbFiles();
                 long junkSize   = scanJunkDir();
                 long appCache   = getAppCacheSize();
                 long browserSz  = getBrowserCacheSize();
@@ -99,8 +118,8 @@ public class FileCleanerPlugin extends Plugin {
                 }
 
                 Log.e(TAG, "cleanJunkFiles types=" + types);
-                if (types.contains("tmp"))     { freed += deleteRecursive(getExternalRoot(), f -> matchesTmp(f));  Log.e(TAG, "tmp done freed="+freed); }
-                if (types.contains("msg"))     { freed += cleanMsgFiles();                                          Log.e(TAG, "msg done freed="+freed); }
+                if (types.contains("tmp"))     { freed += cleanTmpFiles();                                          Log.e(TAG, "tmp done freed="+freed); }
+                if (types.contains("msg"))     { freed += cleanDbFiles();                                           Log.e(TAG, "msg done freed="+freed); }
                 if (types.contains("junk"))    { freed += deleteRecursive(getExternalRoot(), f -> matchesJunk(f)); Log.e(TAG, "junk done freed="+freed); }
                 if (types.contains("appcache")){ freed += clearOwnCache();                                          Log.e(TAG, "appcache done freed="+freed); }
                 if (types.contains("browser")) { freed += clearBrowserCacheFiles();                                 Log.e(TAG, "browser done freed="+freed); }
@@ -154,10 +173,16 @@ public class FileCleanerPlugin extends Plugin {
             try {
                 JSArray files = new JSArray();
                 File ext = Environment.getExternalStorageDirectory();
+                // De-dupe: legacy and scoped-storage roots can both resolve to the
+                // same real folder (symlinked by the OS), so track paths already added.
+                java.util.Set<String> seenPaths = new java.util.HashSet<>();
 
-                for (String waDir : WA_DIRS) {
-                    String subFolder = getWASubfolder(type);
-                    File dir = new File(ext, waDir + "/" + subFolder);
+                for (String[] app : WA_APPS) {
+                    String mediaRoot = app[0];
+                    String prefix    = app[1];
+                    String source    = app[2];
+                    String subFolder = getWASubfolder(prefix, type);
+                    File dir = new File(ext, mediaRoot + "/" + subFolder);
                     if (!dir.exists()) continue;
 
                     File[] listed = dir.listFiles();
@@ -167,12 +192,14 @@ public class FileCleanerPlugin extends Plugin {
                         if (!f.isFile()) continue;
                         if (cutoffMs > 0 && f.lastModified() >= cutoffMs) continue;
                         if (!matchesMediaType(f.getName(), type)) continue;
+                        if (!seenPaths.add(f.getAbsolutePath())) continue;
 
                         JSObject item = new JSObject();
                         item.put("name",   f.getName());
                         item.put("path",   f.getAbsolutePath());
                         item.put("size",   f.length());
                         item.put("dateMs", f.lastModified());
+                        item.put("source", source);
                         files.put(item);
                     }
                 }
@@ -320,30 +347,61 @@ public class FileCleanerPlugin extends Plugin {
         return size;
     }
 
-    private long scanMsgFiles() {
-        long size = 0;
-        List<File> msgFiles = new ArrayList<>();
-        findByExtension(getExternalRoot(), ".msg", msgFiles, 0);
-        if (msgFiles.size() <= 1) return 0;
+    // Deletes both loose *.tmp-style files AND the contents of thumbnail-cache
+    // directories, mirroring scanTmpFiles() exactly. Previously only the
+    // extension-matched files were deleted while thumbnail directories (which are
+    // mostly non-.tmp cached images) were left untouched, so a re-scan right after
+    // cleaning kept reporting the same size.
+    private long cleanTmpFiles() {
+        long freed = 0;
+        File root = getExternalRoot();
+        freed += deleteRecursive(root, f -> matchesTmp(f));
+        for (String thumbDir : THUMB_DIRS) {
+            freed += deleteDirNamed(root, thumbDir, 0);
+        }
+        return freed;
+    }
 
-        msgFiles.sort((a, b) -> Long.compare(b.lastModified(), a.lastModified()));
-        for (int i = 1; i < msgFiles.size(); i++) {
-            size += msgFiles.get(i).length();
+    // WhatsApp / WhatsApp Business encrypted DB backups (*.db.crypt14). Files are
+    // grouped by their containing folder so WhatsApp's and WhatsApp Business's
+    // backups are kept/pruned independently instead of one app's newer backup
+    // wiping out the other app's only backup.
+    private long scanDbFiles() {
+        List<File> dbFiles = new ArrayList<>();
+        findByExtension(getExternalRoot(), DB_BACKUP_EXT, dbFiles, 0);
+        long size = 0;
+        for (List<File> group : groupByParent(dbFiles).values()) {
+            if (group.size() <= 1) continue;
+            group.sort((a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+            for (int i = 1; i < group.size(); i++) size += group.get(i).length();
         }
         return size;
     }
 
-    private long cleanMsgFiles() {
+    private long cleanDbFiles() {
+        List<File> dbFiles = new ArrayList<>();
+        findByExtension(getExternalRoot(), DB_BACKUP_EXT, dbFiles, 0);
         long freed = 0;
-        List<File> msgFiles = new ArrayList<>();
-        findByExtension(getExternalRoot(), ".msg", msgFiles, 0);
-        if (msgFiles.size() <= 1) return 0;
-        msgFiles.sort((a, b) -> Long.compare(b.lastModified(), a.lastModified()));
-        for (int i = 1; i < msgFiles.size(); i++) {
-            freed += msgFiles.get(i).length();
-            msgFiles.get(i).delete();
+        for (List<File> group : groupByParent(dbFiles).values()) {
+            if (group.size() <= 1) continue;
+            group.sort((a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+            for (int i = 1; i < group.size(); i++) {
+                freed += group.get(i).length();
+                group.get(i).delete();
+            }
         }
         return freed;
+    }
+
+    private Map<File, List<File>> groupByParent(List<File> files) {
+        Map<File, List<File>> byParent = new HashMap<>();
+        for (File f : files) {
+            File parent = f.getParentFile();
+            List<File> group = byParent.get(parent);
+            if (group == null) { group = new ArrayList<>(); byParent.put(parent, group); }
+            group.add(f);
+        }
+        return byParent;
     }
 
     private long scanJunkDir() {
@@ -463,7 +521,7 @@ public class FileCleanerPlugin extends Plugin {
     }
 
     private long deleteRecursive(File dir, FileFilter filter, int depth) {
-        if (dir == null || !dir.exists() || depth > 6) return 0;
+        if (dir == null || !dir.exists() || depth > MAX_SCAN_DEPTH) return 0;
         long freed = 0;
         File[] files = dir.listFiles();
         if (files == null) return 0;
@@ -475,7 +533,7 @@ public class FileCleanerPlugin extends Plugin {
     }
 
     private long scanForExtensions(File dir, List<String> exts, int depth) {
-        if (dir == null || !dir.exists() || depth > 6) return 0;
+        if (dir == null || !dir.exists() || depth > MAX_SCAN_DEPTH) return 0;
         long size = 0;
         File[] files = dir.listFiles();
         if (files == null) return 0;
@@ -490,7 +548,7 @@ public class FileCleanerPlugin extends Plugin {
     }
 
     private long findDirSize(File root, String dirName, int depth) {
-        if (root == null || !root.exists() || depth > 6) return 0;
+        if (root == null || !root.exists() || depth > MAX_SCAN_DEPTH) return 0;
         long size = 0;
         File[] files = root.listFiles();
         if (files == null) return 0;
@@ -503,8 +561,27 @@ public class FileCleanerPlugin extends Plugin {
         return size;
     }
 
+    // Deletes the contents of every directory named dirName found under root
+    // (mirrors findDirSize's traversal, but deletes instead of just sizing).
+    private long deleteDirNamed(File root, String dirName, int depth) {
+        if (root == null || !root.exists() || depth > MAX_SCAN_DEPTH) return 0;
+        long freed = 0;
+        File[] files = root.listFiles();
+        if (files == null) return 0;
+        for (File f : files) {
+            if (!f.isDirectory()) continue;
+            if (f.getName().equalsIgnoreCase(dirName)) {
+                freed += getFolderSize(f);
+                deleteRecursiveDir(f);
+            } else {
+                freed += deleteDirNamed(f, dirName, depth + 1);
+            }
+        }
+        return freed;
+    }
+
     private void findByExtension(File dir, String ext, List<File> result, int depth) {
-        if (dir == null || !dir.exists() || depth > 6) return;
+        if (dir == null || !dir.exists() || depth > MAX_SCAN_DEPTH) return;
         File[] files = dir.listFiles();
         if (files == null) return;
         for (File f : files) {
@@ -537,13 +614,15 @@ public class FileCleanerPlugin extends Plugin {
         }
     }
 
-    private String getWASubfolder(String type) {
+    // prefix is "WhatsApp" or "WhatsApp Business" — real device folder names are
+    // e.g. "WhatsApp Video" vs "WhatsApp Business Video".
+    private String getWASubfolder(String prefix, String type) {
         switch (type) {
-            case "video":    return "WhatsApp Video";
-            case "image":    return "WhatsApp Images";
-            case "document": return "WhatsApp Documents";
-            case "audio":    return "WhatsApp Audio";
-            default:         return "WhatsApp Images";
+            case "video":    return prefix + " Video";
+            case "image":    return prefix + " Images";
+            case "document": return prefix + " Documents";
+            case "audio":    return prefix + " Audio";
+            default:         return prefix + " Images";
         }
     }
 

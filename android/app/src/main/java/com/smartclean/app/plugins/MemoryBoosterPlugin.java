@@ -195,20 +195,6 @@ public class MemoryBoosterPlugin extends Plugin {
         }).start();
     }
 
-    // ─── Restart Device ───────────────────────────────────────────────────────
-    @PluginMethod
-    public void restartDevice(PluginCall call) {
-        try {
-            android.os.PowerManager pm = (android.os.PowerManager)
-                getContext().getSystemService(Context.POWER_SERVICE);
-            pm.reboot(null);
-            call.resolve();
-        } catch (Exception e) {
-            // Not a system app — cannot reboot programmatically. Tell JS to show manual instructions.
-            call.reject("manual");
-        }
-    }
-
     // ─── Optimize Storage (TRIM) ──────────────────────────────────────────────
     @PluginMethod
     public void optimizeStorage(PluginCall call) {
