@@ -149,6 +149,24 @@ public class AppManagerPlugin extends Plugin {
         }
     }
 
+    // ─── Open Settings → Storage (so user can clear all-app cache via OS) ────
+    @PluginMethod
+    public void openStorageSettings(PluginCall call) {
+        try {
+            getContext().startActivity(new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            call.resolve();
+        } catch (Exception e) {
+            try {
+                getContext().startActivity(new Intent(Settings.ACTION_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                call.resolve();
+            } catch (Exception e2) {
+                call.reject("Could not open storage settings: " + e2.getMessage());
+            }
+        }
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     private Map<String, Long> buildLastUsedMap(long now) {

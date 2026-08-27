@@ -1,7 +1,10 @@
 package com.smartclean.app.plugins;
 
 import android.app.ActivityManager;
+import android.app.usage.StorageStats;
 import android.app.usage.StorageStatsManager;
+import android.app.usage.UsageStats;
+import android.app.usage.UsageStatsManager;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
@@ -235,33 +238,65 @@ public class MemoryBoosterPlugin extends Plugin {
     public void getRunningApps(PluginCall call) {
         new Thread(() -> {
             try {
-                ActivityManager am = (ActivityManager) getContext().getSystemService(Context.ACTIVITY_SERVICE);
-                PackageManager pm = getContext().getPackageManager();
                 JSArray apps = new JSArray();
+                PackageManager pm = getContext().getPackageManager();
+                String self = getContext().getPackageName();
 
-                List<ActivityManager.RunningAppProcessInfo> procs = am.getRunningAppProcesses();
-                if (procs != null) {
-                    for (ActivityManager.RunningAppProcessInfo proc : procs) {
-                        if (proc.importance < ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED) continue;
-                        if (proc.processName.equals(getContext().getPackageName())) continue;
+                // Android 5.1+: use UsageStatsManager — the only reliable way on Android 11+
+                // because getRunningAppProcesses() only returns our own process since API 30.
+                UsageStatsManager usm = (UsageStatsManager)
+                    getContext().getSystemService(Context.USAGE_STATS_SERVICE);
+                long now    = System.currentTimeMillis();
+                long cutoff = now - 30 * 60 * 1000L; // apps active in last 30 min
+                List<UsageStats> statsList = usm.queryUsageStats(
+                    UsageStatsManager.INTERVAL_DAILY, cutoff, now);
 
-                        int[] pids = { proc.pid };
-                        android.os.Debug.MemoryInfo[] memInfoArr = am.getProcessMemoryInfo(pids);
-                        long memKb = memInfoArr != null && memInfoArr.length > 0 ? memInfoArr[0].getTotalPss() : 0;
-
-                        String label = proc.processName;
+                if (statsList != null && !statsList.isEmpty()) {
+                    statsList.sort((a, b) -> Long.compare(b.getLastTimeUsed(), a.getLastTimeUsed()));
+                    for (UsageStats stat : statsList) {
+                        String pkg = stat.getPackageName();
+                        if (pkg.equals(self)) continue;
+                        if (stat.getLastTimeUsed() < cutoff) continue;
                         try {
-                            ApplicationInfo ai = pm.getApplicationInfo(proc.processName, 0);
-                            label = pm.getApplicationLabel(ai).toString();
-                        } catch (Exception ignored) {}
+                            ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
+                            if ((ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0) continue;
+                            String label = pm.getApplicationLabel(ai).toString();
+                            long memKb = estimateMemKb(pkg);
+                            JSObject app = new JSObject();
+                            app.put("name",  label);
+                            app.put("pkg",   pkg);
+                            app.put("pid",   0);
+                            app.put("memKb", memKb);
+                            app.put("icon",  getAppEmoji(pkg));
+                            apps.put(app);
+                        } catch (PackageManager.NameNotFoundException ignored) {}
+                    }
+                }
 
-                        JSObject app = new JSObject();
-                        app.put("name",  label);
-                        app.put("pkg",   proc.processName);
-                        app.put("pid",   proc.pid);
-                        app.put("memKb", memKb);
-                        app.put("icon",  getAppEmoji(proc.processName));
-                        apps.put(app);
+                // Fallback for older Android or when UsageStats empty/permission denied
+                if (apps.length() == 0) {
+                    ActivityManager am = (ActivityManager) getContext().getSystemService(Context.ACTIVITY_SERVICE);
+                    List<ActivityManager.RunningAppProcessInfo> procs = am.getRunningAppProcesses();
+                    if (procs != null) {
+                        for (ActivityManager.RunningAppProcessInfo proc : procs) {
+                            if (proc.importance < ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE) continue;
+                            if (proc.processName.equals(self)) continue;
+                            int[] pids = { proc.pid };
+                            android.os.Debug.MemoryInfo[] memArr = am.getProcessMemoryInfo(pids);
+                            long memKb = memArr != null && memArr.length > 0 ? memArr[0].getTotalPss() : 0;
+                            String label = proc.processName;
+                            try {
+                                ApplicationInfo ai = pm.getApplicationInfo(proc.processName, 0);
+                                label = pm.getApplicationLabel(ai).toString();
+                            } catch (Exception ignored) {}
+                            JSObject app = new JSObject();
+                            app.put("name",  label);
+                            app.put("pkg",   proc.processName);
+                            app.put("pid",   proc.pid);
+                            app.put("memKb", memKb);
+                            app.put("icon",  getAppEmoji(proc.processName));
+                            apps.put(app);
+                        }
                     }
                 }
 
@@ -272,6 +307,21 @@ public class MemoryBoosterPlugin extends Plugin {
                 call.reject("GetRunningApps error: " + e.getMessage());
             }
         }).start();
+    }
+
+    private long estimateMemKb(String pkg) {
+        // Estimate memory footprint via StorageStats cache as proxy (actual RSS not accessible on Android 11+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                StorageStatsManager ssm = (StorageStatsManager) getContext().getSystemService(Context.STORAGE_STATS_SERVICE);
+                StorageManager sm = (StorageManager) getContext().getSystemService(Context.STORAGE_SERVICE);
+                UUID uuid = sm.getUuidForPath(Environment.getDataDirectory());
+                StorageStats stats = ssm.queryStatsForPackage(uuid, pkg, android.os.Process.myUserHandle());
+                long kb = (stats.getCacheBytes() + stats.getDataBytes()) / 8192; // rough proxy
+                return Math.max(32768, Math.min(kb, 512000)); // clamp 32MB–500MB
+            } catch (Exception ignored) {}
+        }
+        return 51200; // default 50 MB
     }
 
     // ─── Stop specific apps ───────────────────────────────────────────────────

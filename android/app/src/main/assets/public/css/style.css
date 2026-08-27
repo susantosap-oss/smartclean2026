@@ -325,6 +325,24 @@ html, body {
 .btn-defrag-icon { font-size: 22px; }
 .btn-defrag.active-op { border-color: var(--green); }
 
+.trash-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px;
+}
+.trash-header { display: flex; align-items: center; gap: 12px; }
+.trash-ico { font-size: 26px; }
+.trash-body { flex: 1; }
+.trash-title { font-size: 14px; font-weight: 600; color: var(--text); }
+.trash-sub   { font-size: 12px; color: var(--text2); margin-top: 2px; }
+.trash-size  { font-size: 18px; font-weight: 700; color: var(--green); min-width: 64px; text-align: right; }
+.trash-btns  { margin-top: 12px; }
+.btn-trash-clean {
+  width: 100%; padding: 11px; border-radius: 10px; border: none; cursor: pointer;
+  background: linear-gradient(135deg, var(--green2), var(--blue));
+  color: #fff; font-size: 14px; font-weight: 600;
+}
+.btn-defrag.secondary { background: var(--card); border-color: var(--border); opacity:.85; }
+
 .defrag-log {
   margin-top: 16px;
   background: var(--card);

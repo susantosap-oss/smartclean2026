@@ -8,9 +8,9 @@ if (window.Capacitor) {
   const _pm = n => n.map(name => ({ name, rtype: 'promise' }));
   _ph.push(
     { name: 'MemoryBooster',    methods: _pm(['getStorageStats','getMemoryStats','boostMemory','optimizeStorage','getRunningApps','stopApps','getBatteryInfo']) },
-    { name: 'FileCleaner',      methods: _pm(['scanJunkFiles','cleanJunkFiles','deleteFiles','scanWAMedia','scanCameraMedia','scanBrowserCache','clearBrowserCache','clearNotifications']) },
+    { name: 'FileCleaner',      methods: _pm(['scanJunkFiles','cleanJunkFiles','deleteFiles','scanWAMedia','scanCameraMedia','scanBrowserCache','clearBrowserCache','clearNotifications','requestNotificationAccess','scanRecentlyDeleted','cleanRecentlyDeleted']) },
     { name: 'DuplicateFinder',  methods: _pm(['scanDuplicates','deleteFiles']) },
-    { name: 'AppManager',       methods: _pm(['scanUnusedApps','uninstallApp','openNetworkSettings']) },
+    { name: 'AppManager',       methods: _pm(['scanUnusedApps','uninstallApp','openNetworkSettings','openStorageSettings']) },
   );
   window.Capacitor.PluginHeaders = _ph;
 }
@@ -330,13 +330,21 @@ async function scanClean() {
     if (FileCleaner) {
       const res = await FileCleaner.scanJunkFiles();
       results = res.data || {};
+      if (!results.notifAccessGranted) {
+        setTimeout(() => showModal(
+          '🔔 Izin Notifikasi Belum Aktif',
+          'SmartClean belum dapat membaca notifikasi.\n\nTap OK untuk membuka Settings dan aktifkan "Notification Access" untuk SmartClean.',
+          async () => { try { await FileCleaner.requestNotificationAccess(); } catch(e) {} }
+        ), 500);
+      }
     } else {
       results = { tmp:45*1024*1024, msg:12*1024*1024, junk:88*1024*1024,
-                  appcache:230*1024*1024, browser:67*1024*1024, notif:1024*1024, game:155*1024*1024 };
+                  appcache:230*1024*1024, browser:67*1024*1024, notif:1024*1024, game:155*1024*1024,
+                  notifAccessGranted: true };
       await new Promise(r => setTimeout(r, 1800));
     }
     renderCleanList(results);
-    const total = Object.values(results).reduce((a,b) => a+b, 0);
+    const total = Object.values(results).filter(v => typeof v === 'number').reduce((a, b) => a + b, 0);
     toast(`Scan selesai! Ditemukan ${fmt(total)} junk.`);
   } catch(e) {
     toast('Scan error: ' + e.message, 'error');
@@ -391,6 +399,87 @@ async function cleanNow() {
     }
   });
 }
+
+// ════════════════════════════════════════
+//  RECENTLY DELETED (Defrag page)
+// ════════════════════════════════════════
+let _trashBytes = 0;
+
+async function scanTrash() {
+  const btn = document.getElementById('btnScanTrash');
+  btn.querySelector('span:last-child').textContent = '⏳ Scanning…';
+  btn.disabled = true;
+  closeResultPanel();
+  try {
+    if (FileCleaner) {
+      const res = await FileCleaner.scanRecentlyDeleted();
+      _trashBytes = res.sizeBytes || 0;
+      const count = res.count || 0;
+      document.getElementById('trashSize').textContent = fmt(_trashBytes);
+      document.getElementById('trashSub').textContent  =
+        _trashBytes > 0
+          ? `${count} item di sampah · ${fmt(_trashBytes)}`
+          : 'Sampah sistem kosong';
+      document.getElementById('trashBtns').style.display = _trashBytes > 0 ? '' : 'none';
+      toast(_trashBytes > 0 ? `Recently Deleted: ${fmt(_trashBytes)}` : 'Sampah sistem kosong');
+    } else {
+      _trashBytes = 320 * 1024 * 1024;
+      document.getElementById('trashSize').textContent = fmt(_trashBytes);
+      document.getElementById('trashSub').textContent  = '47 item di sampah · ' + fmt(_trashBytes);
+      document.getElementById('trashBtns').style.display = '';
+    }
+  } catch(e) {
+    toast('Scan error: ' + e.message, 'error');
+  } finally {
+    btn.querySelector('span:last-child').textContent = 'Scan Recently Deleted';
+    btn.disabled = false;
+  }
+}
+
+async function cleanTrash() {
+  showModal(
+    '🗑️ Hapus Permanen',
+    `Hapus ${fmt(_trashBytes)} dari sampah sistem secara permanen?\n\nFile tidak bisa dikembalikan setelah ini.`,
+    async () => {
+      const btn = document.getElementById('btnCleanTrash');
+      btn.disabled = true;
+      btn.textContent = '⏳ Menghapus…';
+      showOpProgress();
+      try {
+        const before = await captureStats();
+        let freed = _trashBytes;
+        if (FileCleaner) {
+          const res = await FileCleaner.cleanRecentlyDeleted();
+          freed = res.freedBytes || _trashBytes;
+        } else {
+          demo.storageUsed = Math.max(0, demo.storageUsed - _trashBytes);
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        _trashBytes = 0;
+        document.getElementById('trashSize').textContent = '0 B';
+        document.getElementById('trashSub').textContent  = 'Sampah sistem kosong';
+        document.getElementById('trashBtns').style.display = 'none';
+        const after = computeAfter(before, freed);
+        await loadStorageInfo();
+        showResultPanel(before, after, freed, [
+          { icon:'🗑️', label:'Recently Deleted dibersihkan', value: fmt(freed) },
+          { icon:'💾', label:'Storage dibebaskan',           value: fmt(freed) },
+          { icon:'✅', label:'Status',                       value: 'Permanen dihapus' },
+        ]);
+        toast('✅ Recently Deleted berhasil dibersihkan!');
+      } catch(e) {
+        toast('Gagal: ' + e.message, 'error');
+      } finally {
+        hideOpProgress();
+        btn.disabled = false;
+        btn.textContent = '🧹 Hapus Permanen';
+      }
+    }
+  );
+}
+
+document.getElementById('btnScanTrash').addEventListener('click', scanTrash);
+document.getElementById('btnCleanTrash').addEventListener('click', cleanTrash);
 
 document.getElementById('btnScanClean').addEventListener('click', scanClean);
 document.getElementById('btnCleanNow').addEventListener('click', cleanNow);
@@ -604,7 +693,7 @@ async function scanBatteryApps() {
     }
     renderBgApps();
     const totalMem = bgApps.reduce((s,a) => s+(a.memKb||0)*1024, 0);
-    toast(`Ditemukan ${bgApps.length} background app (${fmt(totalMem)})`);
+    toast(`Ditemukan ${bgApps.length} app aktif baru-baru ini (${fmt(totalMem)})`);
   } catch(e) {
     toast('Scan error: ' + e.message, 'error');
   } finally {
@@ -1330,6 +1419,15 @@ document.getElementById('btnOpenDnsSettings').addEventListener('click', async ()
     else toast('Buka Settings > Network & Internet > Private DNS secara manual');
   } catch (e) {
     toast('Tidak bisa membuka pengaturan: ' + e.message, 'error');
+  }
+});
+
+document.getElementById('btnOpenStorageSettings').addEventListener('click', async () => {
+  try {
+    if (AppManager) await AppManager.openStorageSettings();
+    else toast('Buka Settings → Storage atau Phone Manager secara manual');
+  } catch (e) {
+    toast('Tidak bisa membuka Storage Settings: ' + e.message, 'error');
   }
 });
 

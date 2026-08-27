@@ -2,11 +2,13 @@ package com.smartclean.app.plugins;
 
 import android.app.ActivityManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Environment;
 import android.os.StatFs;
+import android.provider.Settings;
 import android.service.notification.StatusBarNotification;
 import android.util.Log;
 
@@ -27,6 +29,13 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+
+import android.app.usage.StorageStats;
+import android.app.usage.StorageStatsManager;
+import android.os.storage.StorageManager;
+
+import com.smartclean.app.service.NotificationService;
 
 @CapacitorPlugin(name = "FileCleaner")
 public class FileCleanerPlugin extends Plugin {
@@ -46,7 +55,9 @@ public class FileCleanerPlugin extends Plugin {
         ".thumbnails", "thumbnails", "thumbnail", "thumbs", "thumb", ".thumb"
     );
     private static final List<String> JUNK_EXT = Arrays.asList(
-        ".log", ".trace", ".crash", ".ads", ".nomedia_tmp"
+        ".log", ".trace", ".crash", ".ads", ".nomedia_tmp",
+        ".dmp", ".hprof", ".err", ".stackdump",
+        ".DS_Store", "thumbs.db", "desktop.ini"
     );
     private static final List<String> BROWSER_PKGS = Arrays.asList(
         "com.android.chrome", "org.mozilla.firefox", "com.opera.browser",
@@ -54,7 +65,12 @@ public class FileCleanerPlugin extends Plugin {
         "com.sec.android.app.sbrowser", "com.android.browser"
     );
     private static final List<String> GAME_KEYWORDS = Arrays.asList(
-        "game", "games", "play", "pubg", "mlbb", "freefire", "codm", "clash"
+        "game", "games", "gaming",
+        "pubg", "mlbb", "freefire", "codm", "clash",
+        "roblox", "minecraft", "genshin", "honkai", "among",
+        "supercell", "gameloft", "king", "zynga", "nexon",
+        "bandai", "capcom", "squareenix", "ubisoft", "activision",
+        "garena", "moonton", "netease", "mihoyo", "hoyoverse"
     );
     // WhatsApp / WhatsApp Business media roots. On Android 11+ (scoped storage)
     // both apps write under Android/media/<pkg>/..., not the legacy top-level
@@ -84,16 +100,25 @@ public class FileCleanerPlugin extends Plugin {
                 long appCache   = getAppCacheSize();
                 long browserSz  = getBrowserCacheSize();
                 long gameCache  = getGameCacheSize();
+                int  notifCount = getNotifCount();
+
+                Log.e(TAG, "SCAN RESULT: tmp="     + tmpSize   + " msg=" + msgSize
+                    + " junk=" + junkSize + " appcache=" + appCache);
+                boolean notifGranted = NotificationService.instance != null;
+                Log.e(TAG, "SCAN RESULT: browser=" + browserSz + " game=" + gameCache
+                    + " notif=" + notifCount
+                    + " notifSvcConnected=" + notifGranted);
 
                 JSObject result = new JSObject();
                 JSObject data = new JSObject();
-                data.put("tmp",      tmpSize);
-                data.put("msg",      msgSize);
-                data.put("junk",     junkSize);
-                data.put("appcache", appCache);
-                data.put("browser",  browserSz);
-                data.put("notif",    getNotifCount() * 1024L);
-                data.put("game",     gameCache);
+                data.put("tmp",              tmpSize);
+                data.put("msg",              msgSize);
+                data.put("junk",             junkSize);
+                data.put("appcache",         appCache);
+                data.put("browser",          browserSz);
+                data.put("notif",            notifCount * 1024L);
+                data.put("game",             gameCache);
+                data.put("notifAccessGranted", notifGranted);
                 result.put("data", data);
                 call.resolve(result);
             } catch (Exception e) {
@@ -120,7 +145,7 @@ public class FileCleanerPlugin extends Plugin {
                 Log.e(TAG, "cleanJunkFiles types=" + types);
                 if (types.contains("tmp"))     { freed += cleanTmpFiles();                                          Log.e(TAG, "tmp done freed="+freed); }
                 if (types.contains("msg"))     { freed += cleanDbFiles();                                           Log.e(TAG, "msg done freed="+freed); }
-                if (types.contains("junk"))    { freed += deleteRecursive(getExternalRoot(), f -> matchesJunk(f)); Log.e(TAG, "junk done freed="+freed); }
+                if (types.contains("junk"))    { freed += deleteRecursive(getExternalRoot(), f -> matchesJunk(f)); freed += cleanOrphanedAppData(); Log.e(TAG, "junk done freed="+freed); }
                 if (types.contains("appcache")){ freed += clearOwnCache();                                          Log.e(TAG, "appcache done freed="+freed); }
                 if (types.contains("browser")) { freed += clearBrowserCacheFiles();                                 Log.e(TAG, "browser done freed="+freed); }
                 if (types.contains("notif"))   { dismissAllNotifications();                                         Log.e(TAG, "notif done"); }
@@ -269,17 +294,29 @@ public class FileCleanerPlugin extends Plugin {
                 String[] icons = {"🟡","🦊","🔵","🔴","🦁","🌐","🌐","🌐"};
                 int ic = 0;
 
+                StorageStatsManager ssm = null;
+                UUID storageUuid = null;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    try {
+                        ssm = (StorageStatsManager) getContext().getSystemService(Context.STORAGE_STATS_SERVICE);
+                        StorageManager smgr = (StorageManager) getContext().getSystemService(Context.STORAGE_SERVICE);
+                        storageUuid = smgr.getUuidForPath(Environment.getDataDirectory());
+                    } catch (Exception e) { ssm = null; }
+                }
+
                 for (String pkg : BROWSER_PKGS) {
                     try {
                         ApplicationInfo info = pm.getApplicationInfo(pkg, 0);
-                        File cacheDir = new File(getContext().getCacheDir().getParentFile().getParentFile(),
-                            pkg + "/cache");
-                        long cacheSize = getFolderSize(cacheDir);
-                        if (cacheSize == 0) {
-                            cacheDir = new File(Environment.getExternalStorageDirectory(),
-                                "Android/data/" + pkg + "/cache");
-                            cacheSize = getFolderSize(cacheDir);
+                        long cacheSize = 0;
+                        File cacheDir = new File(Environment.getExternalStorageDirectory(), "Android/data/" + pkg + "/cache");
+
+                        if (ssm != null && storageUuid != null) {
+                            try {
+                                StorageStats stats = ssm.queryStatsForPackage(storageUuid, pkg, android.os.Process.myUserHandle());
+                                cacheSize = stats.getCacheBytes();
+                            } catch (Exception ignored) {}
                         }
+                        if (cacheSize == 0) cacheSize = getFolderSize(cacheDir);
 
                         JSObject b = new JSObject();
                         b.put("name", pm.getApplicationLabel(info).toString());
@@ -316,6 +353,105 @@ public class FileCleanerPlugin extends Plugin {
     public void clearNotifications(PluginCall call) {
         dismissAllNotifications();
         call.resolve(new JSObject());
+    }
+
+    // ─── Open Notification Access Settings ────────────────────────────────────
+    @PluginMethod
+    public void requestNotificationAccess(PluginCall call) {
+        try {
+            Intent intent = new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+        } catch (Exception e) {
+            Log.e(TAG, "requestNotificationAccess", e);
+        }
+        call.resolve(new JSObject());
+    }
+
+    // ─── Scan Recently Deleted (MediaStore IS_TRASHED) ────────────────────────
+    @PluginMethod
+    public void scanRecentlyDeleted(PluginCall call) {
+        new Thread(() -> {
+            try {
+                long size = 0; int count = 0;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    android.net.Uri uri = android.provider.MediaStore.Files.getContentUri(
+                        android.provider.MediaStore.VOLUME_EXTERNAL);
+                    String[] projection = { android.provider.MediaStore.Files.FileColumns.SIZE };
+                    android.database.Cursor cursor;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        android.os.Bundle args = new android.os.Bundle();
+                        args.putInt(android.provider.MediaStore.QUERY_ARG_MATCH_TRASHED,
+                            android.provider.MediaStore.MATCH_ONLY);
+                        cursor = getContext().getContentResolver().query(uri, projection, args, null);
+                    } else {
+                        cursor = getContext().getContentResolver().query(uri, projection,
+                            android.provider.MediaStore.Files.FileColumns.IS_TRASHED + " = 1", null, null);
+                    }
+                    if (cursor != null) {
+                        try { while (cursor.moveToNext()) { size += cursor.getLong(0); count++; } }
+                        finally { cursor.close(); }
+                    }
+                }
+                JSObject res = new JSObject();
+                res.put("sizeBytes", size);
+                res.put("count", count);
+                call.resolve(res);
+            } catch (Exception e) {
+                Log.e(TAG, "scanRecentlyDeleted", e);
+                call.reject("Scan error: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    // ─── Clean Recently Deleted ────────────────────────────────────────────────
+    @PluginMethod
+    public void cleanRecentlyDeleted(PluginCall call) {
+        new Thread(() -> {
+            try {
+                long freed = 0; int deleted = 0;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    android.net.Uri baseUri = android.provider.MediaStore.Files.getContentUri(
+                        android.provider.MediaStore.VOLUME_EXTERNAL);
+                    String[] projection = {
+                        android.provider.MediaStore.Files.FileColumns._ID,
+                        android.provider.MediaStore.Files.FileColumns.SIZE
+                    };
+                    android.database.Cursor cursor;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        android.os.Bundle args = new android.os.Bundle();
+                        args.putInt(android.provider.MediaStore.QUERY_ARG_MATCH_TRASHED,
+                            android.provider.MediaStore.MATCH_ONLY);
+                        cursor = getContext().getContentResolver().query(baseUri, projection, args, null);
+                    } else {
+                        cursor = getContext().getContentResolver().query(baseUri, projection,
+                            android.provider.MediaStore.Files.FileColumns.IS_TRASHED + " = 1", null, null);
+                    }
+                    if (cursor != null) {
+                        try {
+                            int idCol   = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns._ID);
+                            int sizeCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns.SIZE);
+                            while (cursor.moveToNext()) {
+                                long id = cursor.getLong(idCol);
+                                long sz = cursor.getLong(sizeCol);
+                                android.net.Uri itemUri = android.content.ContentUris.withAppendedId(baseUri, id);
+                                try {
+                                    int rows = getContext().getContentResolver().delete(itemUri, null, null);
+                                    if (rows > 0) { freed += sz; deleted++; }
+                                } catch (Exception ignored) {}
+                            }
+                        } finally { cursor.close(); }
+                    }
+                }
+                JSObject res = new JSObject();
+                res.put("freedBytes", freed);
+                res.put("deletedCount", deleted);
+                call.resolve(res);
+            } catch (Exception e) {
+                Log.e(TAG, "cleanRecentlyDeleted", e);
+                call.reject("Clean error: " + e.getMessage());
+            }
+        }).start();
     }
 
     // ─── Request Permissions ──────────────────────────────────────────────────
@@ -405,7 +541,9 @@ public class FileCleanerPlugin extends Plugin {
     }
 
     private long scanJunkDir() {
-        return scanForExtensions(getExternalRoot(), JUNK_EXT, 0);
+        long size = scanForExtensions(getExternalRoot(), JUNK_EXT, 0);
+        size += scanOrphanedAppData();
+        return size;
     }
 
     private long getAppCacheSize() {
@@ -428,6 +566,23 @@ public class FileCleanerPlugin extends Plugin {
     }
 
     private long getBrowserCacheSize() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            long size = 0;
+            try {
+                StorageStatsManager ssm = (StorageStatsManager) getContext().getSystemService(Context.STORAGE_STATS_SERVICE);
+                StorageManager smgr = (StorageManager) getContext().getSystemService(Context.STORAGE_SERVICE);
+                UUID uuid = smgr.getUuidForPath(Environment.getDataDirectory());
+                PackageManager pm = getContext().getPackageManager();
+                for (String pkg : BROWSER_PKGS) {
+                    try {
+                        pm.getApplicationInfo(pkg, 0);
+                        StorageStats stats = ssm.queryStatsForPackage(uuid, pkg, android.os.Process.myUserHandle());
+                        size += stats.getCacheBytes();
+                    } catch (Exception ignored) {}
+                }
+            } catch (Exception e) { Log.e(TAG, "getBrowserCacheSize", e); }
+            return size;
+        }
         long size = 0;
         for (String pkg : BROWSER_PKGS) {
             File cache = new File(Environment.getExternalStorageDirectory(), "Android/data/" + pkg + "/cache");
@@ -447,23 +602,40 @@ public class FileCleanerPlugin extends Plugin {
         return freed;
     }
 
+    private boolean isGameApp(ApplicationInfo app) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                && app.category == ApplicationInfo.CATEGORY_GAME) return true;
+        String pkg = app.packageName.toLowerCase();
+        for (String kw : GAME_KEYWORDS) { if (pkg.contains(kw)) return true; }
+        return false;
+    }
+
     private long getGameCacheSize() {
-        long size = 0;
         PackageManager pm = getContext().getPackageManager();
         List<ApplicationInfo> apps;
         try { apps = pm.getInstalledApplications(PackageManager.GET_META_DATA); }
         catch (Exception e) { return 0; }
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            long size = 0;
+            try {
+                StorageStatsManager ssm = (StorageStatsManager) getContext().getSystemService(Context.STORAGE_STATS_SERVICE);
+                StorageManager smgr = (StorageManager) getContext().getSystemService(Context.STORAGE_SERVICE);
+                UUID uuid = smgr.getUuidForPath(Environment.getDataDirectory());
+                for (ApplicationInfo app : apps) {
+                    if (!isGameApp(app)) continue;
+                    try {
+                        StorageStats stats = ssm.queryStatsForPackage(uuid, app.packageName, android.os.Process.myUserHandle());
+                        size += stats.getCacheBytes();
+                    } catch (Exception ignored) {}
+                }
+            } catch (Exception e) { Log.e(TAG, "getGameCacheSize", e); }
+            return size;
+        }
+
+        long size = 0;
         for (ApplicationInfo app : apps) {
-            String pkg = app.packageName.toLowerCase();
-            boolean isGame = false;
-            for (String kw : GAME_KEYWORDS) {
-                if (pkg.contains(kw)) { isGame = true; break; }
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                if ((app.category == ApplicationInfo.CATEGORY_GAME)) isGame = true;
-            }
-            if (!isGame) continue;
+            if (!isGameApp(app)) continue;
             File extData = new File(Environment.getExternalStorageDirectory(), "Android/data/" + app.packageName);
             size += getFolderSize(extData);
         }
@@ -478,13 +650,7 @@ public class FileCleanerPlugin extends Plugin {
         catch (Exception e) { return 0; }
 
         for (ApplicationInfo app : apps) {
-            String pkg = app.packageName.toLowerCase();
-            boolean isGame = false;
-            for (String kw : GAME_KEYWORDS) { if (pkg.contains(kw)) { isGame = true; break; } }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                if (app.category == ApplicationInfo.CATEGORY_GAME) isGame = true;
-            }
-            if (!isGame) continue;
+            if (!isGameApp(app)) continue;
             File cacheDir = new File(Environment.getExternalStorageDirectory(), "Android/data/" + app.packageName + "/cache");
             if (cacheDir.exists()) { freed += getFolderSize(cacheDir); deleteRecursiveDir(cacheDir); }
         }
@@ -492,24 +658,52 @@ public class FileCleanerPlugin extends Plugin {
     }
 
     private int getNotifCount() {
-        try {
-            android.app.NotificationManager nm = (android.app.NotificationManager)
-                getContext().getSystemService(Context.NOTIFICATION_SERVICE);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                return nm.getActiveNotifications().length;
-            }
-        } catch (Exception e) {}
+        NotificationService svc = NotificationService.instance;
+        if (svc != null) {
+            try {
+                StatusBarNotification[] active = svc.getActiveNotifications();
+                return active != null ? active.length : 0;
+            } catch (Exception e) { Log.e(TAG, "getNotifCount", e); }
+        }
         return 0;
     }
 
     private void dismissAllNotifications() {
-        try {
-            android.app.NotificationManager nm = (android.app.NotificationManager)
-                getContext().getSystemService(Context.NOTIFICATION_SERVICE);
-            nm.cancelAll();
-        } catch (Exception e) {
-            Log.e(TAG, "dismissNotifications", e);
+        NotificationService.dismissAll();
+    }
+
+    private long scanOrphanedAppData() {
+        PackageManager pm = getContext().getPackageManager();
+        File androidData = new File(Environment.getExternalStorageDirectory(), "Android/data");
+        if (!androidData.exists()) return 0;
+        File[] dirs = androidData.listFiles();
+        if (dirs == null) return 0;
+        long size = 0;
+        for (File dir : dirs) {
+            if (!dir.isDirectory()) continue;
+            try { pm.getApplicationInfo(dir.getName(), 0); }
+            catch (PackageManager.NameNotFoundException e) { size += getFolderSize(dir); }
         }
+        return size;
+    }
+
+    private long cleanOrphanedAppData() {
+        PackageManager pm = getContext().getPackageManager();
+        File androidData = new File(Environment.getExternalStorageDirectory(), "Android/data");
+        if (!androidData.exists()) return 0;
+        File[] dirs = androidData.listFiles();
+        if (dirs == null) return 0;
+        long freed = 0;
+        for (File dir : dirs) {
+            if (!dir.isDirectory()) continue;
+            try { pm.getApplicationInfo(dir.getName(), 0); }
+            catch (PackageManager.NameNotFoundException e) {
+                freed += getFolderSize(dir);
+                deleteRecursiveDir(dir);
+                dir.delete();
+            }
+        }
+        return freed;
     }
 
     // ─── File traversal helpers ───────────────────────────────────────────────
