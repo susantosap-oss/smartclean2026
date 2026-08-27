@@ -30,7 +30,18 @@ Selesaikan ini sebelum submit ke Play Store:
 - [ ] Tentukan target age group & content rating
 
 ### Play Store Policy Compliance
-- [ ] Review kebijakan Google soal `MANAGE_EXTERNAL_STORAGE` — wajib isi form deklarasi penggunaan
+- [ ] `MANAGE_EXTERNAL_STORAGE` — wajib isi form deklarasi di Play Console (App content → Sensitive app permissions):
+  - Core use case: app ini butuh akses filesystem lintas-app untuk scan Temp/Junk/orphan
+    app data & cache semua app — kategori terdekat di form Google adalah **"File
+    manager"**, karena tidak ada kategori resmi "cleaner/optimizer".
+  - Siapkan **video demo** (device nyata, bukan emulator/mockup) yang menunjukkan Scan
+    Junk → Clean Now benar-benar menghapus file di storage, untuk dilampirkan ke form.
+  - Jelaskan di form kenapa Storage Access Framework / MediaStore **tidak cukup**: fitur
+    ini butuh menghapus cache app lain di `Android/data/<pkg>/cache` yang tidak
+    ter-index MediaStore dan tidak bisa diakses lewat SAF picker per-file.
+  - Review bisa 1–3 minggu dan **bisa ditolak** — siapkan rencana cadangan (lihat opsi
+    "kurangi scope" jika ditolak: batasi ke cache app sendiri + WA media via SAF +
+    Recently Deleted via MediaStore, semua tanpa perlu izin ini).
 - [ ] Review kebijakan `PACKAGE_USAGE_STATS` — wajib isi form deklarasi
 - [ ] Review kebijakan `REQUEST_DELETE_PACKAGES` — wajib isi form deklarasi
 - [ ] Pastikan tidak ada klaim "speed boost" atau "RAM cleaner" yang misleading di deskripsi
