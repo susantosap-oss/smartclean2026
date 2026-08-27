@@ -362,7 +362,7 @@ async function cleanNow() {
   if (cleanSelected.size === 0) { toast('Pilih minimal 1 item', 'error'); return; }
   const types  = [...cleanSelected];
   const totalBytes = types.reduce((s, id) => s + (cleanData[id] || 0), 0);
-  const itemNames  = types.map(id => CLEAN_ITEMS.find(i=>i.id===id)?.title || id).join(', ');
+  const itemNames  = types.map(id => { const it = CLEAN_ITEMS.find(i=>i.id===id); return (it && it.title) || id; }).join(', ');
 
   showModal('Konfirmasi Clean', `Hapus ${fmt(totalBytes)} dari: ${itemNames}?`, async () => {
     const btn = document.getElementById('btnCleanNow');
@@ -385,7 +385,7 @@ async function cleanNow() {
 
       const details = types.map(id => {
         const item = CLEAN_ITEMS.find(i => i.id === id);
-        return { icon: item?.icon || '✅', label: item?.title || id, value: fmt(cleanData[id] || 0) };
+        return { icon: (item && item.icon) || '✅', label: (item && item.title) || id, value: fmt(cleanData[id] || 0) };
       });
       details.push({ icon:'📁', label:'Total files cleaned', value: fmt(totalBytes) });
 
@@ -1192,7 +1192,7 @@ async function scanDuplicates() {
     }
 
     renderDupGroups();
-    const totalDup = dupGroups.reduce((s,g) => s + g.totalSize - (g.files[0]?.size||0), 0);
+    const totalDup = dupGroups.reduce((s,g) => s + g.totalSize - ((g.files[0] && g.files[0].size)||0), 0);
     toast(`${dupGroups.length} grup duplikat · ~${fmt(totalDup)} dapat dihapus`);
     document.getElementById('dupSub').textContent = `${dupGroups.length} grup duplikat ditemukan`;
   } catch(e) {
@@ -1247,13 +1247,13 @@ document.getElementById('btnAutoSelectDup').addEventListener('click', () => {
     sorted.slice(1).forEach(f => dupSelected.add(f.path)); // keep newest, select rest
   });
   renderDupGroups();
-  const totalSz = dupGroups.flatMap(g=>g.files).filter(f=>dupSelected.has(f.path)).reduce((s,f)=>s+f.size,0);
+  const totalSz = dupGroups.reduce((acc,g)=>acc.concat(g.files),[]).filter(f=>dupSelected.has(f.path)).reduce((s,f)=>s+f.size,0);
   toast(`${dupSelected.size} file dipilih otomatis · ${fmt(totalSz)}`);
 });
 document.getElementById('btnDeleteDup').addEventListener('click', async () => {
   if (!dupSelected.size) { toast('Pilih file dulu', 'error'); return; }
   const paths    = [...dupSelected];
-  const allFiles = dupGroups.flatMap(g => g.files);
+  const allFiles = dupGroups.reduce((acc,g) => acc.concat(g.files), []);
   const toDelete = allFiles.filter(f => paths.includes(f.path));
   const totalSz  = toDelete.reduce((s,f) => s+f.size, 0);
 

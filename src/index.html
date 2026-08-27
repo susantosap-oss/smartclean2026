@@ -382,6 +382,44 @@
             <li>Pilih <b>Hostname penyedia DNS pribadi</b>, tempel hostname di atas, lalu Simpan</li>
           </ol>
           <button class="btn-scan-adv" id="btnOpenDnsSettings">⚙️ Buka Pengaturan Jaringan</button>
+
+          <div class="ads-note">
+            <div class="ads-note-title">⚠️ Kalau setelah Simpan internet malah tidak bisa connect</div>
+            <p>
+              Beberapa jaringan WiFi (kantor, kampus, WiFi publik) memblokir port khusus
+              yang dipakai Private DNS, sehingga Android menolak semua koneksi sampai
+              pengaturannya diubah lagi. Hostname DNS-nya tidak salah — jaringan itu saja
+              yang tidak mendukung fitur ini. Cara mengatasinya:
+            </p>
+            <ol>
+              <li>Buka lagi <b>Network &amp; Internet → Private DNS</b></li>
+              <li>Pilih <b>Otomatis</b> (bukan Mati) saat berada di jaringan tersebut &mdash;
+                mode ini otomatis kembali ke DNS biasa kalau DNS anti-iklan tidak didukung,
+                jadi internet tetap jalan (ad-block sementara tidak aktif di jaringan itu)</li>
+              <li>Ganti lagi ke <b>Hostname penyedia DNS pribadi</b> saat kembali ke WiFi
+                rumah atau data seluler yang mendukung</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+
+      <!-- System Cache Cleaner (shortcut to OS-level cache cleaner) -->
+      <div class="adv-card" id="advSysCache">
+        <div class="adv-header" onclick="toggleAdv('sysCache')">
+          <div class="adv-icon">🧽</div>
+          <div class="adv-title-wrap">
+            <div class="adv-title">Bersihkan Cache Semua App</div>
+            <div class="adv-sub">Lewat cleaner bawaan sistem</div>
+          </div>
+          <div class="adv-chevron" id="chevSysCache">▼</div>
+        </div>
+        <div class="adv-body hidden" id="sysCacheBody">
+          <p class="ads-desc">
+            Android tidak mengizinkan app pihak ketiga (termasuk SmartClean) menghapus
+            cache internal app lain secara langsung. Satu-satunya cara resmi & aman untuk
+            membersihkan cache semua app sekaligus adalah lewat cleaner bawaan sistem HP kamu.
+          </p>
+          <button class="btn-scan-adv" id="btnOpenStorageSettings">🧹 Buka Cleaner Bawaan Sistem</button>
         </div>
       </div>
 

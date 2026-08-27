@@ -555,6 +555,14 @@ html, body {
 .btn-copy:active { background: var(--bg3); }
 .ads-steps { margin: 0 0 14px; padding-left: 20px; font-size: 12.5px; color: var(--text2); line-height: 1.8; }
 .ads-steps b { color: var(--text); }
+.ads-note {
+  margin-top: 14px; padding: 12px 14px; border-radius: 10px;
+  background: rgba(255, 202, 40, 0.08); border: 1px solid rgba(255, 202, 40, 0.3);
+}
+.ads-note-title { font-size: 12.5px; font-weight: 600; color: var(--yellow); margin-bottom: 8px; }
+.ads-note p { font-size: 12px; color: var(--text2); line-height: 1.6; margin: 0 0 10px; }
+.ads-note ol { margin: 0; padding-left: 18px; font-size: 12px; color: var(--text2); line-height: 1.7; }
+.ads-note ol b { color: var(--text); }
 
 /* Browser List */
 .browser-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }

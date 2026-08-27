@@ -193,6 +193,7 @@ public class FileCleanerPlugin extends Plugin {
     public void scanWAMedia(PluginCall call) {
         String type   = call.getString("type", "video");
         long cutoffMs = call.getLong("cutoffMs", 0L);
+        Log.e(TAG, "scanWAMedia type=" + type + " cutoffMs=" + cutoffMs + " now=" + System.currentTimeMillis());
 
         new Thread(() -> {
             try {
@@ -201,6 +202,13 @@ public class FileCleanerPlugin extends Plugin {
                 // De-dupe: legacy and scoped-storage roots can both resolve to the
                 // same real folder (symlinked by the OS), so track paths already added.
                 java.util.Set<String> seenPaths = new java.util.HashSet<>();
+                // De-dupe at the directory level too: on Android's case-insensitive
+                // storage FUSE layer, "WhatsApp/Media" and "Whatsapp/Media" (kept in
+                // WA_APPS for older case-sensitive filesystems) resolve to the SAME
+                // real folder, so scanning both double-counts every file in it — file-path
+                // de-dupe alone doesn't catch this because the two paths differ only by
+                // case and are therefore different strings.
+                java.util.Set<String> seenDirs = new java.util.HashSet<>();
 
                 for (String[] app : WA_APPS) {
                     String mediaRoot = app[0];
@@ -208,15 +216,24 @@ public class FileCleanerPlugin extends Plugin {
                     String source    = app[2];
                     String subFolder = getWASubfolder(prefix, type);
                     File dir = new File(ext, mediaRoot + "/" + subFolder);
-                    if (!dir.exists()) continue;
+                    boolean exists = dir.exists();
+                    String dirKey;
+                    try { dirKey = dir.getCanonicalPath().toLowerCase(java.util.Locale.ROOT); }
+                    catch (Exception e) { dirKey = dir.getAbsolutePath().toLowerCase(java.util.Locale.ROOT); }
+                    boolean isDup = exists && !seenDirs.add(dirKey);
+                    File[] listed = (exists && !isDup) ? dir.listFiles() : null;
+                    Log.e(TAG, "scanWAMedia dir=" + dir.getAbsolutePath()
+                        + " exists=" + exists + " dup=" + isDup
+                        + " listedCount=" + (listed != null ? listed.length : -1));
+                    if (!exists || isDup || listed == null) continue;
 
-                    File[] listed = dir.listFiles();
-                    if (listed == null) continue;
-
+                    int matchedExt = 0, matchedCutoff = 0;
                     for (File f : listed) {
                         if (!f.isFile()) continue;
-                        if (cutoffMs > 0 && f.lastModified() >= cutoffMs) continue;
                         if (!matchesMediaType(f.getName(), type)) continue;
+                        matchedExt++;
+                        if (cutoffMs > 0 && f.lastModified() >= cutoffMs) continue;
+                        matchedCutoff++;
                         if (!seenPaths.add(f.getAbsolutePath())) continue;
 
                         JSObject item = new JSObject();
@@ -226,13 +243,19 @@ public class FileCleanerPlugin extends Plugin {
                         item.put("dateMs", f.lastModified());
                         item.put("source", source);
                         files.put(item);
+                        Log.e(TAG, "scanWAMedia MATCH name=" + f.getName() + " size=" + f.length()
+                            + " lastModified=" + f.lastModified());
                     }
+                    Log.e(TAG, "scanWAMedia dir=" + dir.getName()
+                        + " matchedExt=" + matchedExt + " passedCutoff=" + matchedCutoff);
                 }
 
                 JSObject res = new JSObject();
                 res.put("files", files);
+                Log.e(TAG, "scanWAMedia TOTAL files=" + files.length());
                 call.resolve(res);
             } catch (Exception e) {
+                Log.e(TAG, "scanWAMedia ERROR", e);
                 call.reject("WA scan error: " + e.getMessage());
             }
         }).start();
@@ -285,6 +308,11 @@ public class FileCleanerPlugin extends Plugin {
     }
 
     // ─── Scan Browser Cache ───────────────────────────────────────────────────
+    // Reports only the externally-reachable cache folder size (same scope
+    // clearBrowserCacheFiles() deletes) — NOT StorageStatsManager's OS-reported total,
+    // which includes each browser's private internal cache that no third-party app can
+    // delete. Reporting the OS total here made the number reappear unchanged after every
+    // Clean Now, since the internal-cache portion was never actually removable.
     @PluginMethod
     public void scanBrowserCache(PluginCall call) {
         new Thread(() -> {
@@ -294,29 +322,11 @@ public class FileCleanerPlugin extends Plugin {
                 String[] icons = {"🟡","🦊","🔵","🔴","🦁","🌐","🌐","🌐"};
                 int ic = 0;
 
-                StorageStatsManager ssm = null;
-                UUID storageUuid = null;
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    try {
-                        ssm = (StorageStatsManager) getContext().getSystemService(Context.STORAGE_STATS_SERVICE);
-                        StorageManager smgr = (StorageManager) getContext().getSystemService(Context.STORAGE_SERVICE);
-                        storageUuid = smgr.getUuidForPath(Environment.getDataDirectory());
-                    } catch (Exception e) { ssm = null; }
-                }
-
                 for (String pkg : BROWSER_PKGS) {
                     try {
                         ApplicationInfo info = pm.getApplicationInfo(pkg, 0);
-                        long cacheSize = 0;
                         File cacheDir = new File(Environment.getExternalStorageDirectory(), "Android/data/" + pkg + "/cache");
-
-                        if (ssm != null && storageUuid != null) {
-                            try {
-                                StorageStats stats = ssm.queryStatsForPackage(storageUuid, pkg, android.os.Process.myUserHandle());
-                                cacheSize = stats.getCacheBytes();
-                            } catch (Exception ignored) {}
-                        }
-                        if (cacheSize == 0) cacheSize = getFolderSize(cacheDir);
+                        long cacheSize = getFolderSize(cacheDir);
 
                         JSObject b = new JSObject();
                         b.put("name", pm.getApplicationLabel(info).toString());
@@ -546,43 +556,59 @@ public class FileCleanerPlugin extends Plugin {
         return size;
     }
 
+    // "App Cache" means cache across every installed app, not just SmartClean's own —
+    // mirrors the per-package StorageStatsManager approach already used for browser/game
+    // cache. Own app's internal cache (getCacheDir()) is added on top since that path is
+    // only readable by SmartClean itself; other apps' internal caches aren't accessible.
     private long getAppCacheSize() {
         long size = 0;
-        File cacheDir = getContext().getCacheDir();
-        if (cacheDir != null) size += getFolderSize(cacheDir);
-        File extCache = getContext().getExternalCacheDir();
-        if (extCache != null) size += getFolderSize(extCache);
+        File ownCache = getContext().getCacheDir();
+        if (ownCache != null) size += getFolderSize(ownCache);
+
+        PackageManager pm = getContext().getPackageManager();
+        List<ApplicationInfo> apps;
+        try { apps = pm.getInstalledApplications(PackageManager.GET_META_DATA); }
+        catch (Exception e) { return size; }
+
+        // Deliberately NOT using StorageStatsManager here: it reports each app's total
+        // cache including its private internal storage, which no third-party app is
+        // allowed to delete (Android sandboxing since API 26). Scanning only the
+        // externally-reachable cache folder keeps this number equal to what
+        // clearOwnCache() can actually free, so it doesn't appear to "come back" after
+        // Clean Now.
+        for (ApplicationInfo app : apps) {
+            if ((app.flags & ApplicationInfo.FLAG_SYSTEM) != 0) continue;
+            File extCache = new File(Environment.getExternalStorageDirectory(), "Android/data/" + app.packageName + "/cache");
+            size += getFolderSize(extCache);
+        }
         return size;
     }
 
+    // Clears cache for every installed (non-system) app, plus SmartClean's own internal
+    // cache. Other apps' caches are only reachable via their external Android/data/<pkg>/cache
+    // folder (legacy storage access) — same constraint clearBrowserCacheFiles()/clearGameCache()
+    // already operate under.
     private long clearOwnCache() {
         long freed = getFolderSize(getContext().getCacheDir());
         deleteRecursiveDir(getContext().getCacheDir());
-        if (getContext().getExternalCacheDir() != null) {
-            freed += getFolderSize(getContext().getExternalCacheDir());
-            deleteRecursiveDir(getContext().getExternalCacheDir());
+
+        PackageManager pm = getContext().getPackageManager();
+        List<ApplicationInfo> apps;
+        try { apps = pm.getInstalledApplications(PackageManager.GET_META_DATA); }
+        catch (Exception e) { return freed; }
+
+        for (ApplicationInfo app : apps) {
+            if ((app.flags & ApplicationInfo.FLAG_SYSTEM) != 0) continue;
+            File cacheDir = new File(Environment.getExternalStorageDirectory(), "Android/data/" + app.packageName + "/cache");
+            if (cacheDir.exists()) { freed += getFolderSize(cacheDir); deleteRecursiveDir(cacheDir); }
         }
         return freed;
     }
 
+    // Scans only the externally-reachable cache folder (same scope clearBrowserCacheFiles()
+    // deletes) rather than StorageStatsManager's OS-reported total, which includes each
+    // browser's private internal cache that no third-party app can delete.
     private long getBrowserCacheSize() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            long size = 0;
-            try {
-                StorageStatsManager ssm = (StorageStatsManager) getContext().getSystemService(Context.STORAGE_STATS_SERVICE);
-                StorageManager smgr = (StorageManager) getContext().getSystemService(Context.STORAGE_SERVICE);
-                UUID uuid = smgr.getUuidForPath(Environment.getDataDirectory());
-                PackageManager pm = getContext().getPackageManager();
-                for (String pkg : BROWSER_PKGS) {
-                    try {
-                        pm.getApplicationInfo(pkg, 0);
-                        StorageStats stats = ssm.queryStatsForPackage(uuid, pkg, android.os.Process.myUserHandle());
-                        size += stats.getCacheBytes();
-                    } catch (Exception ignored) {}
-                }
-            } catch (Exception e) { Log.e(TAG, "getBrowserCacheSize", e); }
-            return size;
-        }
         long size = 0;
         for (String pkg : BROWSER_PKGS) {
             File cache = new File(Environment.getExternalStorageDirectory(), "Android/data/" + pkg + "/cache");
@@ -610,34 +636,20 @@ public class FileCleanerPlugin extends Plugin {
         return false;
     }
 
+    // Scans only each game's externally-reachable cache folder (same scope
+    // clearGameCache() deletes) rather than StorageStatsManager's OS-reported total,
+    // which includes private internal cache no third-party app can delete.
     private long getGameCacheSize() {
         PackageManager pm = getContext().getPackageManager();
         List<ApplicationInfo> apps;
         try { apps = pm.getInstalledApplications(PackageManager.GET_META_DATA); }
         catch (Exception e) { return 0; }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            long size = 0;
-            try {
-                StorageStatsManager ssm = (StorageStatsManager) getContext().getSystemService(Context.STORAGE_STATS_SERVICE);
-                StorageManager smgr = (StorageManager) getContext().getSystemService(Context.STORAGE_SERVICE);
-                UUID uuid = smgr.getUuidForPath(Environment.getDataDirectory());
-                for (ApplicationInfo app : apps) {
-                    if (!isGameApp(app)) continue;
-                    try {
-                        StorageStats stats = ssm.queryStatsForPackage(uuid, app.packageName, android.os.Process.myUserHandle());
-                        size += stats.getCacheBytes();
-                    } catch (Exception ignored) {}
-                }
-            } catch (Exception e) { Log.e(TAG, "getGameCacheSize", e); }
-            return size;
-        }
-
         long size = 0;
         for (ApplicationInfo app : apps) {
             if (!isGameApp(app)) continue;
-            File extData = new File(Environment.getExternalStorageDirectory(), "Android/data/" + app.packageName);
-            size += getFolderSize(extData);
+            File cacheDir = new File(Environment.getExternalStorageDirectory(), "Android/data/" + app.packageName + "/cache");
+            size += getFolderSize(cacheDir);
         }
         return size;
     }
