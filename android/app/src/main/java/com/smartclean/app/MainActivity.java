@@ -8,14 +8,19 @@ import android.os.Bundle;
 import android.content.Intent;
 import android.net.Uri;
 import android.provider.Settings;
+import android.view.View;
 import androidx.activity.OnBackPressedCallback;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import com.getcapacitor.BridgeActivity;
 import com.smartclean.app.plugins.FileCleanerPlugin;
 import com.smartclean.app.plugins.MemoryBoosterPlugin;
 import com.smartclean.app.plugins.DuplicateFinderPlugin;
 import com.smartclean.app.plugins.AppManagerPlugin;
+import com.smartclean.app.plugins.BillingManagerPlugin;
 
 public class MainActivity extends BridgeActivity {
 
@@ -25,9 +30,25 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(MemoryBoosterPlugin.class);
         registerPlugin(DuplicateFinderPlugin.class);
         registerPlugin(AppManagerPlugin.class);
+        registerPlugin(BillingManagerPlugin.class);
         super.onCreate(savedInstanceState);
         requestLegacyStoragePermission();
         setupBackButton();
+        setupEdgeToEdgeInsets();
+    }
+
+    // targetSdk 35+ forces edge-to-edge — the WebView draws under the status/nav
+    // bars by default, so fixed UI (header, bottom-nav) ends up unreachable behind
+    // the system nav bar. Padding the content root by the system bar insets restores
+    // the pre-35 "boxed" layout; windowBackground (@color/bg) already matches the
+    // app's CSS --bg so the reserved strips blend in with no visible seam.
+    private void setupEdgeToEdgeInsets() {
+        View content = findViewById(android.R.id.content);
+        ViewCompat.setOnApplyWindowInsetsListener(content, (v, windowInsets) -> {
+            Insets bars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars());
+            v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            return windowInsets;
+        });
     }
 
     // Each special-access Settings screen is attempted at most ONCE per app process

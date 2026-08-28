@@ -71,6 +71,55 @@ html, body {
   50% { transform: scale(1.08); }
 }
 
+/* ── Privacy Policy Gate ── */
+.privacy-screen {
+  position: fixed; inset: 0;
+  z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg);
+  padding: 20px;
+}
+.privacy-box {
+  width: 100%; max-width: 420px;
+  max-height: 92vh;
+  display: flex; flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+.privacy-header { display: flex; flex-direction: column; align-items: center; text-align: center; flex-shrink: 0; }
+.privacy-title { font-size: 18px; font-weight: 700; margin-top: 10px; }
+.privacy-sub { font-size: 12px; color: var(--text2); margin-top: 4px; }
+.privacy-body {
+  flex: 1; overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  user-select: text;
+  margin: 16px 0;
+  padding: 12px 14px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 12.5px; line-height: 1.6; color: var(--text2);
+}
+.privacy-body p { margin-bottom: 10px; }
+.privacy-body p:last-child { margin-bottom: 0; }
+.privacy-check {
+  display: flex; align-items: flex-start; gap: 10px;
+  font-size: 12.5px; color: var(--text);
+  flex-shrink: 0; cursor: pointer;
+}
+.privacy-check input { margin-top: 2px; accent-color: var(--green); width: 16px; height: 16px; flex-shrink: 0; }
+.privacy-actions {
+  display: flex; gap: 10px;
+  margin-top: 16px;
+  flex-shrink: 0;
+}
+.privacy-actions .btn-primary:disabled {
+  opacity: .4; cursor: not-allowed;
+}
+.privacy-actions .btn-primary:disabled:active { transform: none; }
+
 /* ── App Shell ── */
 .app { display: flex; flex-direction: column; height: 100vh; }
 .hidden { display: none !important; }
@@ -84,13 +133,16 @@ html, body {
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-.header-left { display: flex; align-items: center; gap: 8px; }
-.header-title { font-size: 18px; font-weight: 700; }
+.header-left { display: flex; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; }
+.header-title { font-size: 18px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.header-storage { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .storage-chip {
   font-size: 12px; color: var(--text2);
   background: var(--bg3);
   padding: 4px 10px; border-radius: 20px;
   border: 1px solid var(--border);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* ── Storage Bar ── */
@@ -639,6 +691,89 @@ html, body {
 }
 .toast.error { background: rgba(255,82,82,.15); border-color: var(--red); color: var(--red); }
 .toast.hiding { opacity: 0; }
+
+/* ── Pro / Upgrade ── */
+.pro-lock {
+  display: inline-block;
+  font-size: 10px; font-weight: 700;
+  color: var(--yellow);
+  vertical-align: middle;
+}
+.is-pro .pro-lock { display: none; }
+
+.header-pro-badge {
+  background: none; border: none;
+  color: var(--yellow); font-size: 12px; font-weight: 700;
+  padding: 0; cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity .15s;
+}
+.header-pro-badge:active { opacity: .6; }
+.header-pro-badge.hidden { display: none; }
+
+.upgrade-box {
+  max-width: 360px;
+  text-align: center;
+  position: relative;
+  max-height: 90vh; overflow-y: auto;
+}
+.upgrade-close {
+  position: absolute; top: 12px; right: 12px;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text2); font-size: 13px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.upgrade-crown { font-size: 34px; margin-bottom: 4px; }
+.upgrade-box .modal-title { font-size: 20px; }
+.upgrade-reason {
+  font-size: 12.5px; color: var(--text2);
+  margin-bottom: 16px;
+}
+.upgrade-benefits {
+  list-style: none;
+  display: flex; flex-direction: column; gap: 9px;
+  text-align: left;
+  font-size: 12.5px;
+  margin-bottom: 18px;
+  padding: 14px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.upgrade-price {
+  font-size: 22px; font-weight: 800;
+  background: linear-gradient(135deg, var(--green), var(--blue));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  margin-bottom: 12px;
+}
+.upgrade-buy { width: 100%; padding: 14px; font-size: 15px; }
+.upgrade-buy:disabled { opacity: .5; cursor: not-allowed; }
+.upgrade-restore {
+  background: none; border: none;
+  color: var(--text2); font-size: 12px;
+  text-decoration: underline;
+  margin-top: 12px; cursor: pointer;
+}
+
+.dup-group.dup-locked {
+  border: 1px dashed var(--border);
+  cursor: pointer;
+  opacity: .85;
+}
+.dup-group.dup-locked .dup-group-header { border-bottom: none; color: var(--yellow); font-weight: 600; }
+
+.rp-locked {
+  margin-top: 10px;
+  padding: 12px;
+  background: var(--bg2);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text2);
+  cursor: pointer;
+}
 
 /* ── Modal ── */
 .modal {

@@ -1,0 +1,37 @@
+KEBIJAKAN PRIVASI (PRIVACY POLICY)
+Tanggal Berlaku: 28 Agustus 2026
+
+Kebijakan Privasi ini menjelaskan bagaimana kami mengelola, memproses, dan melindungi data pengguna pada aplikasi seluler kami: SmartClean. Kami berkomitmen penuh untuk melindungi privasi Anda sesuai dengan Undang-Undang Perlindungan Data Pribadi (UU PDP No. 27 Tahun 2022) Republik Indonesia dan kebijakan Google Play Store.
+
+1. PENGUMPULAN DAN PENYIMPANAN DATA (LOCAL STORAGE)
+Seluruh aplikasi kami dirancang dengan prinsip pemrosesan lokal (client-side / local storage). Kami tidak mengumpulkan, menyimpan, memproses, atau mengunggah data pribadi maupun konten Anda ke server eksternal milik kami. Seluruh data operasional aplikasi tersimpan secara aman di dalam memori internal perangkat Anda sendiri.
+
+2. IZIN AKSES PERANGKAT (PERMISSIONS)
+Aplikasi SmartClean hanya meminta izin akses teknis yang sangat diperlukan untuk menjalankan fungsi utamanya seperti :
+- Memerlukan izin akses Kamera dan Penyimpanan Media/Galeri semata-mata untuk mengambil foto dan video properti/even/lokasi dan menyimpannya di perangkat Anda.
+- Memerlukan izin akses Penyimpanan (Storage / All Files Access) semata-mata untuk memindai, mengidentifikasi, dan menghapus berkas sampah (junk files/cache) serta mengelola berkas lokal sesuai perintah dan persetujuan Anda.
+- Memerlukan izin akses Penyimpanan Lokal hanya untuk menyimpan preferensi tampilan, penanda halaman (bookmark), dan catatan pribadi Anda secara lokal.
+
+3. TRANSAKSI PEMBELIAN DALAM APLIKASI (IN-APP PURCHASE)
+Aplikasi kami menyediakan fitur premium berbasis pembelian satu kali (one-time purchase / in-app purchase):
+- Pemrosesan Pembayaran: Seluruh transaksi pembayaran (menggunakan E-Wallet seperti GoPay, OVO, ShopeePay, QRIS, maupun Virtual Account) diproses secara aman melalui sistem penagihan resmi Google Play Billing (atau metode pembayaran terintegrasi lainnya).
+- Data Finansial: Kami tidak pernah mengakses, mengumpulkan, atau menyimpan informasi finansial sensitif Anda, seperti nomor kartu kredit, PIN, kredensial akun e-wallet, atau detail perbankan Anda.
+- Status Pembelian: Sistem hanya memverifikasi status lisensi/pembelian dari Google Play Store untuk membuka akses ke fitur premium di perangkat Anda.
+
+4. PEMBAGIAN DATA KEPADA PIHAK KETIGA
+Kami tidak menjual, menyewakan, atau membagikan data pribadi Anda kepada pihak ketiga manapun. Transaksi pembelian sepenuhnya tunduk pada Kebijakan Privasi Google Play dan penyedia layanan pembayaran terkait yang digunakan pada akun Google Play Anda.
+
+5. HAK PENGGUNA DAN PENGHAPUSAN DATA (UU PDP)
+Sesuai dengan hak subjek data dalam UU PDP, Anda memiliki kendali penuh atas data Anda:
+- Anda dapat menghapus seluruh data yang tersimpan di dalam aplikasi kapan saja melalui menu Pengaturan Perangkat Anda (Settings > Apps > Clear Data / Clear Storage).
+- Mencopot pemasangan (uninstall) aplikasi akan secara otomatis menghapus seluruh data lokal yang terhubung dengan aplikasi tersebut dari perangkat Anda.
+
+6. PERUBAHAN KEBIJAKAN PRIVASI
+Kami dapat memperbarui Kebijakan Privasi ini dari waktu ke waktu untuk menyesuaikan dengan pembaruan fitur atau regulasi hukum yang berlaku. Setiap perubahan akan dipublikasikan di halaman ini.
+
+7. KONTAK PENGEMBANG
+Jika Anda memiliki pertanyaan mengenai Kebijakan Privasi ini atau operasional aplikasi kami, Anda dapat menghubungi kami melalui:
+Email Dukungan: ads.dev26@gmail.com
+Pengembang: ads dev Team
+
+(c) 2026 ads dev. Hak Cipta Dilindungi Undang-Undang.

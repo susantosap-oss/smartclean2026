@@ -33,6 +33,37 @@
   <div class="splash-loader"><div class="splash-bar"></div></div>
 </div>
 
+<!-- ─── PRIVACY POLICY (shown on first launch, must grant to continue) ─── -->
+<div id="privacyScreen" class="privacy-screen hidden">
+  <div class="privacy-box">
+    <div class="privacy-header">
+      <svg width="36" height="36" viewBox="0 0 80 80" fill="none">
+        <circle cx="40" cy="40" r="38" stroke="url(#pg)" stroke-width="3"/>
+        <path d="M26 52 C26 52 30 32 40 30 C50 28 54 38 50 46 C46 54 36 56 32 48"
+              stroke="url(#pg)" stroke-width="3" stroke-linecap="round" fill="none"/>
+        <circle cx="40" cy="38" r="6" fill="url(#pg)"/>
+        <defs>
+          <linearGradient id="pg" x1="0" y1="0" x2="80" y2="80">
+            <stop offset="0%" stop-color="#00e676"/>
+            <stop offset="100%" stop-color="#00b0ff"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <div class="privacy-title">Kebijakan Privasi</div>
+      <div class="privacy-sub">Mohon baca &amp; setujui sebelum melanjutkan</div>
+    </div>
+    <div class="privacy-body" id="privacyBody">Memuat kebijakan privasi…</div>
+    <label class="privacy-check">
+      <input type="checkbox" id="privacyCheck">
+      <span>Saya sudah membaca dan menyetujui Kebijakan Privasi di atas</span>
+    </label>
+    <div class="privacy-actions">
+      <button class="btn-secondary" id="btnPrivacyDecline">Tolak &amp; Keluar</button>
+      <button class="btn-primary" id="btnPrivacyAccept" disabled>Setuju &amp; Lanjutkan</button>
+    </div>
+  </div>
+</div>
+
 <!-- ─── MAIN APP ─── -->
 <div id="app" class="app hidden">
 
@@ -52,6 +83,7 @@
         </defs>
       </svg>
       <span class="header-title">SmartClean</span>
+      <button class="header-pro-badge" id="btnUpgradeEntry" onclick="openUpgradeModal()">(PRO)</button>
     </div>
     <div class="header-storage">
       <span class="storage-chip">
@@ -148,7 +180,7 @@
           <div class="trash-size" id="trashSize">—</div>
         </div>
         <div class="trash-btns" id="trashBtns" style="display:none">
-          <button class="btn-trash-clean" id="btnCleanTrash">🧹 Hapus Permanen</button>
+          <button class="btn-trash-clean" id="btnCleanTrash">🧹 Hapus Permanen <span class="pro-lock">🔒 PRO</span></button>
         </div>
       </div>
       <button class="btn-defrag secondary" id="btnScanTrash" style="margin-top:0">
@@ -224,15 +256,15 @@
           <div class="wa-tabs">
             <button class="wa-tab active" data-type="video">Video</button>
             <button class="wa-tab" data-type="image">Foto</button>
-            <button class="wa-tab" data-type="document">Dokumen</button>
-            <button class="wa-tab" data-type="audio">Audio</button>
+            <button class="wa-tab" data-type="document">Dokumen <span class="pro-lock">🔒</span></button>
+            <button class="wa-tab" data-type="audio">Audio <span class="pro-lock">🔒</span></button>
           </div>
           <div class="wa-filter">
             <span class="filter-label">Sisakan</span>
             <select id="waMonths" class="filter-sel">
               <option value="3">3 Bulan Terakhir</option>
               <option value="6">6 Bulan Terakhir</option>
-              <option value="1">1 Bulan Terakhir</option>
+              <option value="1">1 Bulan Terakhir (🔒 Pro)</option>
             </select>
           </div>
           <button class="btn-scan-adv" id="btnScanWA">🔍 Scan WhatsApp</button>
@@ -259,7 +291,7 @@
           <button class="btn-scan-adv" id="btnScanBrowser">🔍 Scan Browser Cache</button>
           <div id="browserFileList" class="file-list"></div>
           <div class="action-row" id="browserActions" style="display:none">
-            <button class="btn-primary" id="btnClearBrowser">🗑 Clear Browser Cache</button>
+            <button class="btn-primary" id="btnClearBrowser">🗑 Clear Browser Cache <span class="pro-lock">🔒 PRO</span></button>
           </div>
         </div>
       </div>
@@ -269,7 +301,7 @@
         <div class="adv-header" onclick="toggleAdv('camera')">
           <div class="adv-icon">📷</div>
           <div class="adv-title-wrap">
-            <div class="adv-title">Camera & Gallery Cleaner</div>
+            <div class="adv-title">Camera & Gallery Cleaner <span class="pro-lock">🔒 PRO</span></div>
             <div class="adv-sub" id="camSub">Foto & Video lama</div>
           </div>
           <div class="adv-chevron" id="chevCamera">▼</div>
@@ -310,13 +342,13 @@
         <div class="adv-body hidden" id="dupBody">
           <div class="dup-scope">
             <label class="dup-opt">
-              <input type="radio" name="dupScope" value="all" checked> Semua Storage
+              <input type="radio" name="dupScope" value="all" checked> Semua Storage <span class="pro-lock">🔒</span>
             </label>
             <label class="dup-opt">
               <input type="radio" name="dupScope" value="photos"> Hanya Foto
             </label>
             <label class="dup-opt">
-              <input type="radio" name="dupScope" value="videos"> Hanya Video
+              <input type="radio" name="dupScope" value="videos"> Hanya Video <span class="pro-lock">🔒</span>
             </label>
           </div>
           <button class="btn-scan-adv" id="btnScanDup">🔍 Scan Duplicates</button>
@@ -337,7 +369,7 @@
         <div class="adv-header" onclick="toggleAdv('unused')">
           <div class="adv-icon">📱</div>
           <div class="adv-title-wrap">
-            <div class="adv-title">Unused App Cleaner</div>
+            <div class="adv-title">Unused App Cleaner <span class="pro-lock">🔒 PRO</span></div>
             <div class="adv-sub" id="unusedSub">App tidak dipakai &gt; 6 bulan</div>
           </div>
           <div class="adv-chevron" id="chevUnused">▼</div>
@@ -357,7 +389,7 @@
         <div class="adv-header" onclick="toggleAdv('ads')">
           <div class="adv-icon">🚫</div>
           <div class="adv-title-wrap">
-            <div class="adv-title">Remove Ads</div>
+            <div class="adv-title">Remove Ads <span class="pro-lock">🔒 PRO</span></div>
             <div class="adv-sub">Blokir iklan di semua app &amp; browser</div>
           </div>
           <div class="adv-chevron" id="chevAds">▼</div>
@@ -474,6 +506,29 @@
     <button class="rp-close" onclick="closeResultPanel()">✕</button>
   </div>
   <div class="rp-body" id="resultBody"></div>
+</div>
+
+<!-- ─── Upgrade to Pro (Google Play Billing one-time purchase) ─── -->
+<div id="upgradeModal" class="modal hidden">
+  <div class="modal-box upgrade-box">
+    <button class="upgrade-close" onclick="closeUpgradeModal()">✕</button>
+    <div class="upgrade-crown">⭐</div>
+    <div class="modal-title">SmartClean Pro</div>
+    <div class="upgrade-reason" id="upgradeReason">Upgrade untuk membuka semua fitur tanpa batas.</div>
+    <ul class="upgrade-benefits">
+      <li>🧹 Clean, Defrag &amp; Boost tanpa batas harian</li>
+      <li>💬 WhatsApp Cleaner penuh — Dokumen, Audio &amp; semua rentang waktu</li>
+      <li>🗑️ Hapus Recently Deleted secara permanen</li>
+      <li>🔄 Duplicate Finder — semua tipe file, semua hasil</li>
+      <li>📷 Camera/Gallery Cleaner &amp; 📱 Unused App Cleaner penuh</li>
+      <li>🌐 Browser Cache — hapus, bukan cuma scan</li>
+      <li>🚫 Remove Ads (Private DNS) shortcut</li>
+      <li>📊 Before/After Result Panel lengkap</li>
+    </ul>
+    <div class="upgrade-price" id="upgradePrice">Rp 49.999</div>
+    <button class="btn-primary upgrade-buy" id="btnUpgradeBuy" onclick="purchasePro()">Upgrade — Rp 49.999</button>
+    <button class="upgrade-restore" onclick="restorePro()">Sudah beli? Pulihkan Pembelian</button>
+  </div>
 </div>
 
 <script src="native-bridge.js"></script>

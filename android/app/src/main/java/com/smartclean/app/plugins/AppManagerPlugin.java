@@ -1,5 +1,6 @@
 package com.smartclean.app.plugins;
 
+import android.app.Activity;
 import android.app.usage.StorageStats;
 import android.app.usage.StorageStatsManager;
 import android.app.usage.UsageStats;
@@ -20,6 +21,7 @@ import android.os.storage.StorageManager;
 import android.provider.Settings;
 import android.util.Base64;
 import android.util.Log;
+import android.view.WindowManager;
 
 import androidx.activity.result.ActivityResult;
 
@@ -165,6 +167,22 @@ public class AppManagerPlugin extends Plugin {
                 call.reject("Could not open storage settings: " + e2.getMessage());
             }
         }
+    }
+
+    // ─── Keep screen on during long scan/clean operations ─────────────────────
+    @PluginMethod
+    public void setKeepScreenOn(PluginCall call) {
+        boolean enabled = Boolean.TRUE.equals(call.getBoolean("enabled", true));
+        Activity activity = getActivity();
+        if (activity == null) { call.reject("Activity tidak tersedia"); return; }
+        activity.runOnUiThread(() -> {
+            if (enabled) {
+                activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            } else {
+                activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            }
+        });
+        call.resolve();
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────

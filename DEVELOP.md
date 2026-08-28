@@ -208,7 +208,7 @@ Keywords utama yang kompetitornya lemah:
 - `hapus cache semua aplikasi`
 
 ### Launch Strategy
-1. **Early Bird Pricing** — 3 bulan pertama Pro di Rp 19.000 (lalu naik ke Rp 39.000)
+1. Harga Pro: **Rp 49.999** one-time purchase (lihat Phase 5)
 2. Target review minimum **50 review bintang 4–5** sebelum scale marketing
 3. Minta review di dalam app setelah user berhasil clean pertama kali (sweet spot)
 4. Share di komunitas: grup Facebook "Tips Android Indonesia", forum Kaskus, Reddit r/indonesia
@@ -220,12 +220,11 @@ Keywords utama yang kompetitornya lemah:
 | Tier | Harga | Keterangan |
 |---|---|---|
 | **Free** | Rp 0 | Fitur terbatas + AdMob banner |
-| **Pro — Early Bird** | Rp 19.000 | 3–6 bulan pertama setelah launch |
-| **Pro — Regular** | Rp 39.000 | One-time, selamanya |
+| **Pro** | Rp 49.999 | One-time purchase, selamanya — product ID `smartclean_pro` |
 
-**Mengapa Rp 39.000:**
-- Di bawah psychological barrier Rp 50.000
-- 4x lebih murah dari CCleaner lifetime (Rp ~180.000)
+**Mengapa Rp 49.999:**
+- Masih di bawah psychological barrier Rp 50.000
+- 3-4x lebih murah dari CCleaner lifetime (Rp ~180.000)
 - One-time = nilai jual besar di era subscription fatigue
 - Setara 1 cup kopi — mudah dirasionalisasi user
 

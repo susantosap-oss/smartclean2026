@@ -10,18 +10,160 @@ if (window.Capacitor) {
     { name: 'MemoryBooster',    methods: _pm(['getStorageStats','getMemoryStats','boostMemory','optimizeStorage','getRunningApps','stopApps','getBatteryInfo']) },
     { name: 'FileCleaner',      methods: _pm(['scanJunkFiles','cleanJunkFiles','deleteFiles','scanWAMedia','scanCameraMedia','scanBrowserCache','clearBrowserCache','clearNotifications','requestNotificationAccess','scanRecentlyDeleted','cleanRecentlyDeleted']) },
     { name: 'DuplicateFinder',  methods: _pm(['scanDuplicates','deleteFiles']) },
-    { name: 'AppManager',       methods: _pm(['scanUnusedApps','uninstallApp','openNetworkSettings','openStorageSettings']) },
+    { name: 'AppManager',       methods: _pm(['scanUnusedApps','uninstallApp','openNetworkSettings','openStorageSettings','setKeepScreenOn']) },
+    { name: 'BillingManager',   methods: _pm(['getProStatus','getProductDetails','purchasePro','restorePurchases']) },
   );
   window.Capacitor.PluginHeaders = _ph;
 }
 
 // ── Capacitor plugin registration ──
 const { registerPlugin } = window.Capacitor || {};
-const FileCleaner   = registerPlugin ? registerPlugin('FileCleaner')   : null;
-const MemoryBooster = registerPlugin ? registerPlugin('MemoryBooster') : null;
-const DupFinder     = registerPlugin ? registerPlugin('DuplicateFinder') : null;
-const AppManager    = registerPlugin ? registerPlugin('AppManager')    : null;
-const AppPlugin     = registerPlugin ? registerPlugin('App') : null;
+const FileCleaner    = registerPlugin ? registerPlugin('FileCleaner')   : null;
+const MemoryBooster  = registerPlugin ? registerPlugin('MemoryBooster') : null;
+const DupFinder      = registerPlugin ? registerPlugin('DuplicateFinder') : null;
+const AppManager     = registerPlugin ? registerPlugin('AppManager')    : null;
+const AppPlugin      = registerPlugin ? registerPlugin('App') : null;
+const BillingManager = registerPlugin ? registerPlugin('BillingManager') : null;
+
+// ════════════════════════════════════════
+//  PRO / GOOGLE PLAY BILLING
+//  Product: one-time purchase "smartclean_pro" — see DEVELOP.md Phase 2 for
+//  the full free-vs-pro feature spec this gating implements.
+// ════════════════════════════════════════
+const PRO_CACHE_KEY = 'sc_is_pro';
+// Display-only fallback shown until the real price loads from Play Billing (or
+// if it can't — product not yet created in Play Console, browser preview, etc).
+// Must match the price actually configured for "smartclean_pro" in Play Console.
+const PRO_FALLBACK_PRICE = 'Rp 49.999';
+let isPro = localStorage.getItem(PRO_CACHE_KEY) === '1';
+let proProduct = null; // populated once by loadProProduct()
+
+// Applies/removes every free-tier lock in the DOM. Called on boot (cached
+// value, instant) and again whenever the real Play Billing state changes.
+function setProState(pro) {
+  isPro = !!pro;
+  localStorage.setItem(PRO_CACHE_KEY, isPro ? '1' : '0');
+  document.body.classList.toggle('is-pro', isPro);
+
+  // WhatsApp Cleaner — "1 Bulan Terakhir" (most aggressive filter) is Pro-only
+  const waOpt1 = document.querySelector('#waMonths option[value="1"]');
+  if (waOpt1) waOpt1.disabled = !isPro;
+
+  // Duplicate Finder — free tier locked to "Hanya Foto" scope
+  document.querySelectorAll('input[name="dupScope"]').forEach(r => {
+    r.disabled = !isPro && r.value !== 'photos';
+  });
+  if (!isPro) {
+    const photosRadio = document.querySelector('input[name="dupScope"][value="photos"]');
+    if (photosRadio) photosRadio.checked = true;
+  }
+
+  // Re-render already-scanned lists so caps/locks apply immediately after purchase
+  if (typeof dupGroups !== 'undefined' && dupGroups.length) renderDupGroups();
+
+  const upgradeEntry = document.getElementById('btnUpgradeEntry');
+  if (upgradeEntry) upgradeEntry.classList.toggle('hidden', isPro);
+}
+
+async function refreshProStatus() {
+  if (!BillingManager) return; // browser preview / plugin unavailable — keep cached/free state
+  try {
+    const res = await BillingManager.getProStatus();
+    setProState(res.isPro);
+  } catch (e) { /* keep cached state */ }
+}
+
+async function loadProProduct() {
+  const priceEl = document.getElementById('upgradePrice');
+  const buyBtn  = document.getElementById('btnUpgradeBuy');
+  if (!BillingManager) {
+    if (priceEl) priceEl.textContent = PRO_FALLBACK_PRICE;
+    if (buyBtn)  buyBtn.textContent  = `Upgrade — ${PRO_FALLBACK_PRICE}`;
+    return;
+  }
+  try {
+    proProduct = await BillingManager.getProductDetails();
+    if (priceEl) priceEl.textContent = proProduct.formattedPrice;
+    if (buyBtn)  buyBtn.textContent  = `Upgrade — ${proProduct.formattedPrice}`;
+  } catch (e) {
+    // Most likely cause at this stage: "smartclean_pro" not created in Play
+    // Console yet. Show the planned price instead of leaving it blank/stuck.
+    if (priceEl) priceEl.textContent = PRO_FALLBACK_PRICE;
+    if (buyBtn)  buyBtn.textContent  = `Upgrade — ${PRO_FALLBACK_PRICE}`;
+  }
+}
+
+window.purchasePro = purchasePro;
+async function purchasePro() {
+  if (!BillingManager) {
+    toast('Pembelian hanya tersedia lewat aplikasi terpasang dari Google Play.');
+    return;
+  }
+  const btn = document.getElementById('btnUpgradeBuy');
+  const originalLabel = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Memproses…'; }
+  try {
+    const res = await BillingManager.purchasePro();
+    setProState(res.isPro !== false);
+    closeUpgradeModal();
+    toast('🎉 Selamat! SmartClean Pro aktif — semua fitur terbuka.');
+  } catch (e) {
+    const msg = String((e && e.message) || e);
+    if (!msg.toLowerCase().includes('cancel')) {
+      toast('Pembelian gagal: ' + msg, 'error');
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = originalLabel || 'Upgrade Sekarang'; }
+  }
+}
+
+window.restorePro = restorePro;
+async function restorePro() {
+  if (!BillingManager) return;
+  try {
+    const res = await BillingManager.restorePurchases();
+    setProState(res.isPro);
+    toast(res.isPro ? '✅ Pembelian Pro berhasil dipulihkan!' : 'Tidak ada pembelian Pro ditemukan untuk akun Google Play ini.');
+  } catch (e) {
+    toast('Gagal memulihkan pembelian: ' + e.message, 'error');
+  }
+}
+
+window.openUpgradeModal = openUpgradeModal;
+function openUpgradeModal(reason) {
+  const modal = document.getElementById('upgradeModal');
+  document.getElementById('upgradeReason').textContent =
+    reason || 'Upgrade ke Pro untuk membuka semua fitur SmartClean tanpa batas.';
+  modal.classList.remove('hidden');
+  if (!proProduct) loadProProduct();
+}
+window.closeUpgradeModal = function() {
+  document.getElementById('upgradeModal').classList.add('hidden');
+};
+
+// Gate helper for Pro-exclusive features — returns true if allowed to proceed,
+// otherwise opens the upsell modal and returns false.
+function requirePro(reason) {
+  if (isPro) return true;
+  openUpgradeModal(reason);
+  return false;
+}
+
+// Free-tier daily-limit helper (Clean Now / Defrag / Boost — 1x/day each on Free).
+function checkDailyLimit(key, reason) {
+  if (isPro) return true;
+  const today = new Date().toISOString().slice(0, 10);
+  if (localStorage.getItem(`sc_daily_${key}`) === today) {
+    openUpgradeModal(reason);
+    return false;
+  }
+  return true;
+}
+function markDailyUsed(key) {
+  if (isPro) return;
+  const today = new Date().toISOString().slice(0, 10);
+  localStorage.setItem(`sc_daily_${key}`, today);
+}
 
 // ── Demo state (simulated values for browser preview) ──
 const demo = {
@@ -139,6 +281,22 @@ function showResultPanel(before, after, freed, details) {
   const panel = document.getElementById('resultPanel');
   const body  = document.getElementById('resultBody');
 
+  // Free tier: Before/After detail is a Pro feature — still surface the win
+  // (bytes freed) as a motivating teaser, without the full stats breakdown.
+  if (!isPro) {
+    body.innerHTML = `
+      <div class="rp-freed">
+        <div class="rp-freed-num">${fmt(freed)}</div>
+        <div class="rp-freed-sub">Total Dibebaskan</div>
+      </div>
+      <div class="rp-locked" onclick="closeResultPanel(); openUpgradeModal('Before/After detail — grafik storage & RAM, Optimization Score — adalah fitur Pro.');">
+        🔒 Detail Before/After &amp; Optimization Score tersedia di <b>Pro</b>
+      </div>
+    `;
+    panel.classList.remove('hidden');
+    return;
+  }
+
   const sB = before.storage, sA = after.storage;
   const rB = before.ram,     rA = after.ram;
   const sDiff = sB.pct - sA.pct;  // positive = improvement
@@ -235,8 +393,14 @@ window.closeResultPanel = function() {
   resetClean();
 };
 
-function showOpProgress() { document.getElementById('opProgress').classList.remove('hidden'); }
-function hideOpProgress() { document.getElementById('opProgress').classList.add('hidden'); }
+function showOpProgress() {
+  document.getElementById('opProgress').classList.remove('hidden');
+  if (AppManager) AppManager.setKeepScreenOn({ enabled: true }).catch(() => {});
+}
+function hideOpProgress() {
+  document.getElementById('opProgress').classList.add('hidden');
+  if (AppManager) AppManager.setKeepScreenOn({ enabled: false }).catch(() => {});
+}
 
 function resetClean() {
   cleanSelected.clear();
@@ -360,6 +524,7 @@ async function scanClean() {
 
 async function cleanNow() {
   if (cleanSelected.size === 0) { toast('Pilih minimal 1 item', 'error'); return; }
+  if (!checkDailyLimit('clean', 'Clean Now di versi Free dibatasi 1x per hari. Upgrade ke Pro untuk clean tanpa batas.')) return;
   const types  = [...cleanSelected];
   const totalBytes = types.reduce((s, id) => s + (cleanData[id] || 0), 0);
   const itemNames  = types.map(id => { const it = CLEAN_ITEMS.find(i=>i.id===id); return (it && it.title) || id; }).join(', ');
@@ -389,6 +554,7 @@ async function cleanNow() {
       });
       details.push({ icon:'📁', label:'Total files cleaned', value: fmt(totalBytes) });
 
+      markDailyUsed('clean');
       showResultPanel(before, after, totalBytes, details);
     } catch(e) {
       toast('Clean gagal: ' + e.message, 'error');
@@ -437,6 +603,7 @@ async function scanTrash() {
 }
 
 async function cleanTrash() {
+  if (!requirePro('Menghapus Recently Deleted secara permanen adalah fitur Pro.')) return;
   showModal(
     '🗑️ Hapus Permanen',
     `Hapus ${fmt(_trashBytes)} dari sampah sistem secara permanen?\n\nFile tidak bisa dikembalikan setelah ini.`,
@@ -536,6 +703,7 @@ function logDefrag(msg, ok = false) {
 }
 
 document.getElementById('btnDefrag').addEventListener('click', async () => {
+  if (!checkDailyLimit('defrag', 'Defrag & Optimize Storage di versi Free dibatasi 1x per hari. Upgrade ke Pro untuk tanpa batas.')) return;
   const btn = document.getElementById('btnDefrag');
   btn.classList.add('active-op');
   btn.querySelector('span:last-child').textContent = 'Optimizing…';
@@ -567,6 +735,7 @@ document.getElementById('btnDefrag').addEventListener('click', async () => {
     await initDefrag();
     const after = computeAfter(before, freed);
 
+    markDailyUsed('defrag');
     showResultPanel(before, after, freed, [
       { icon:'⚡', label:'Storage trimmed',         value: fmt(freed) },
       { icon:'💾', label:'Blok tersisa (internal)', value: fmt(after.storage.total - after.storage.used) },
@@ -584,6 +753,7 @@ document.getElementById('btnDefrag').addEventListener('click', async () => {
 });
 
 document.getElementById('btnBoost').addEventListener('click', async () => {
+  if (!checkDailyLimit('boost', 'Boost Memory (RAM) di versi Free dibatasi 1x per hari. Upgrade ke Pro untuk tanpa batas.')) return;
   const btn = document.getElementById('btnBoost');
   btn.querySelector('span:last-child').textContent = 'Boosting…';
   btn.disabled = true;
@@ -615,6 +785,7 @@ document.getElementById('btnBoost').addEventListener('click', async () => {
     await initDefrag();
     const after = computeAfter(before, 0, freed);
 
+    markDailyUsed('boost');
     showResultPanel(before, after, freed, [
       { icon:'🧠', label:'RAM dibebaskan',    value: fmt(freed) },
       { icon:'⚡', label:'App dihentikan',    value: killed + ' proses' },
@@ -757,10 +928,18 @@ document.getElementById('btnKillApps').addEventListener('click', killAllApps);
 // ════════════════════════════════════════
 //  ADVANCED — helper
 // ════════════════════════════════════════
+// Entire card is Pro-only — absent from the Free feature table in DEVELOP.md.
+const PRO_LOCKED_CARDS = {
+  camera: 'Camera & Gallery Cleaner adalah fitur Pro.',
+  unused: 'Unused App Cleaner adalah fitur Pro.',
+  ads:    'Remove Ads (Private DNS) adalah fitur Pro.',
+};
+
 window.toggleAdv = function(key) {
   const body = document.getElementById(key + 'Body');
   const chev = document.getElementById('chev' + key.charAt(0).toUpperCase() + key.slice(1));
   const open = body.classList.contains('hidden');
+  if (open && PRO_LOCKED_CARDS[key] && !requirePro(PRO_LOCKED_CARDS[key])) return;
   body.classList.toggle('hidden');
   if (chev) chev.classList.toggle('open', open);
 };
@@ -843,9 +1022,11 @@ let waFiles = [], waSelected = new Set(), waCurrentType = 'video';
 
 document.querySelectorAll('#waBody .wa-tab').forEach(tab => {
   tab.addEventListener('click', () => {
+    const type = tab.dataset.type;
+    if ((type === 'document' || type === 'audio') && !requirePro('WhatsApp Cleaner untuk Dokumen & Audio adalah fitur Pro. Versi Free hanya Video & Foto.')) return;
     document.querySelectorAll('#waBody .wa-tab').forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
-    waCurrentType = tab.dataset.type;
+    waCurrentType = type;
     renderWAFiles();
   });
 });
@@ -998,6 +1179,7 @@ async function scanBrowserCache() {
 
 document.getElementById('btnScanBrowser').addEventListener('click', scanBrowserCache);
 document.getElementById('btnClearBrowser').addEventListener('click', async () => {
+  if (!requirePro('Menghapus Browser Cache adalah fitur Pro. Versi Free hanya bisa scan.')) return;
   showModal('Clear Browser Cache', 'Hapus semua cache browser yang ditemukan?', async () => {
     const before = await captureStats();
     try {
@@ -1204,6 +1386,14 @@ async function scanDuplicates() {
   }
 }
 
+// Free tier caps displayed/actionable groups at 5 (DEVELOP.md: "tampilkan maks. 5
+// grup"). Render, Auto Select and Delete all read through this so free users can't
+// act on hidden groups just because they aren't rendered.
+const DUP_FREE_GROUP_CAP = 5;
+function visibleDupGroups() {
+  return isPro ? dupGroups : dupGroups.slice(0, DUP_FREE_GROUP_CAP);
+}
+
 function renderDupGroups() {
   const list = document.getElementById('dupList');
   if (!dupGroups.length) {
@@ -1211,7 +1401,10 @@ function renderDupGroups() {
     document.getElementById('dupActions').style.display = 'none';
     return;
   }
-  list.innerHTML = dupGroups.map((g, gi) => `
+  const visible = visibleDupGroups();
+  const hiddenCount = dupGroups.length - visible.length;
+
+  list.innerHTML = visible.map((g, gi) => `
     <div class="dup-group">
       <div class="dup-group-header">
         <span>${g.files.length} file identik</span>
@@ -1226,7 +1419,14 @@ function renderDupGroups() {
           <div class="fi-size">${fmt(f.size)}</div>
           <div class="fi-check"></div>
         </div>`).join('')}
-    </div>`).join('');
+    </div>`).join('')
+    + (hiddenCount > 0 ? `
+    <div class="dup-group dup-locked" onclick="openUpgradeModal('Lihat & hapus semua grup duplikat — bukan cuma ${DUP_FREE_GROUP_CAP} pertama — adalah fitur Pro.')">
+      <div class="dup-group-header">
+        <span>🔒 ${hiddenCount} grup duplikat lainnya</span>
+        <span>Pro</span>
+      </div>
+    </div>` : '');
 
   list.querySelectorAll('.dup-file-item').forEach(el => {
     el.addEventListener('click', () => {
@@ -1242,18 +1442,18 @@ function renderDupGroups() {
 document.getElementById('btnScanDup').addEventListener('click', scanDuplicates);
 document.getElementById('btnAutoSelectDup').addEventListener('click', () => {
   dupSelected.clear();
-  dupGroups.forEach(g => {
+  visibleDupGroups().forEach(g => {
     const sorted = [...g.files].sort((a,b) => b.dateMs - a.dateMs);
     sorted.slice(1).forEach(f => dupSelected.add(f.path)); // keep newest, select rest
   });
   renderDupGroups();
-  const totalSz = dupGroups.reduce((acc,g)=>acc.concat(g.files),[]).filter(f=>dupSelected.has(f.path)).reduce((s,f)=>s+f.size,0);
+  const totalSz = visibleDupGroups().reduce((acc,g)=>acc.concat(g.files),[]).filter(f=>dupSelected.has(f.path)).reduce((s,f)=>s+f.size,0);
   toast(`${dupSelected.size} file dipilih otomatis · ${fmt(totalSz)}`);
 });
 document.getElementById('btnDeleteDup').addEventListener('click', async () => {
   if (!dupSelected.size) { toast('Pilih file dulu', 'error'); return; }
   const paths    = [...dupSelected];
-  const allFiles = dupGroups.reduce((acc,g) => acc.concat(g.files), []);
+  const allFiles = visibleDupGroups().reduce((acc,g) => acc.concat(g.files), []);
   const toDelete = allFiles.filter(f => paths.includes(f.path));
   const totalSz  = toDelete.reduce((s,f) => s+f.size, 0);
 
@@ -1505,15 +1705,78 @@ window.handleBackButton = function handleBackButton() {
 // ════════════════════════════════════════
 async function init() {
   await loadStorageInfo();
+  await refreshProStatus();
 }
 
 // Splash → App
-setTimeout(async () => {
-  const splash = document.getElementById('splash');
-  splash.style.opacity = '0';
-  setTimeout(() => {
-    splash.classList.add('hidden');
-    document.getElementById('app').classList.remove('hidden');
-  }, 500);
-  await init();
-}, 2500);
+function startApp() {
+  setTimeout(async () => {
+    const splash = document.getElementById('splash');
+    splash.style.opacity = '0';
+    setTimeout(() => {
+      splash.classList.add('hidden');
+      document.getElementById('app').classList.remove('hidden');
+    }, 500);
+    await init();
+  }, 2500);
+}
+
+// ════════════════════════════════════════
+//  PRIVACY POLICY GATE (first launch)
+// ════════════════════════════════════════
+const PRIVACY_KEY = 'sc_privacy_accepted_v1';
+
+async function loadPrivacyPolicyText() {
+  try {
+    const res = await fetch('privacy_policy.txt');
+    if (!res.ok) throw new Error('fetch failed');
+    return await res.text();
+  } catch (e) {
+    return 'Kebijakan Privasi tidak dapat dimuat saat ini. Silakan hubungi ads.dev26@gmail.com.';
+  }
+}
+
+function renderPrivacyText(raw) {
+  const body = document.getElementById('privacyBody');
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  body.innerHTML = raw
+    .trim()
+    .split(/\n{2,}/)
+    .map(p => `<p>${esc(p.trim()).replace(/\n/g, '<br>')}</p>`)
+    .join('');
+}
+
+async function showPrivacyGate() {
+  const screen = document.getElementById('privacyScreen');
+  const check  = document.getElementById('privacyCheck');
+  const btnOk  = document.getElementById('btnPrivacyAccept');
+  const btnNo  = document.getElementById('btnPrivacyDecline');
+
+  screen.classList.remove('hidden');
+  renderPrivacyText(await loadPrivacyPolicyText());
+
+  check.onchange = () => { btnOk.disabled = !check.checked; };
+
+  btnNo.onclick = () => {
+    if (AppPlugin) {
+      AppPlugin.exitApp();
+    } else {
+      toast('Anda perlu menyetujui Kebijakan Privasi untuk menggunakan aplikasi ini.');
+    }
+  };
+
+  btnOk.onclick = () => {
+    if (!check.checked) return;
+    localStorage.setItem(PRIVACY_KEY, '1');
+    screen.classList.add('hidden');
+    startApp();
+  };
+}
+
+// ── Boot sequence ──
+setProState(isPro); // apply cached Free/Pro lock state immediately; refreshProStatus() reconciles with Play Billing inside init()
+if (localStorage.getItem(PRIVACY_KEY) === '1') {
+  startApp();
+} else {
+  showPrivacyGate();
+}
