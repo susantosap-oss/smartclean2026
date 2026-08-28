@@ -16,6 +16,7 @@ AGP 8.13.2, Gradle 8.13, Billing Library 8.0.0, product ID `smartclean_pro` @
 - Google Play Billing SDK terpasang & tervalidasi compile (`BillingManagerPlugin.java`)
 - Free vs Pro gating sesuai tabel di `DEVELOP.md` Phase 2
 - Privacy Policy gate di app (tampil first-launch, wajib accept)
+- Privacy Policy di-hosting publik: https://susantosap-oss.github.io/policy_privacy/
 - Launcher icon final
 - targetSdk 36 migration + fix edge-to-edge (bottom nav sempat ketutup navbar Android, sudah diperbaiki via inset padding di `MainActivity.java`)
 - Keep-screen-on saat scan/clean berjalan
@@ -55,25 +56,18 @@ sekali tanpa ini.
 
 ---
 
-## 🔴 2. Hosting Privacy Policy (BLOCKER)
+## ✅ 2. Hosting Privacy Policy — SELESAI
 
-Play Console **wajib** URL publik (App Content → Privacy Policy) — teks
-in-app di `privacy_policy.txt` gak dihitung.
+Live di GitHub Pages, repo terpisah `susantosap-oss/policy_privacy`:
 
-**Rencana: GitHub Pages** (kamu yang siapkan). Langkah singkat:
-1. Enable GitHub Pages di repo ini (Settings → Pages → source: branch
-   `master`/`gh-pages`, folder `/docs` atau `/root`).
-2. Convert `privacy_policy.txt` jadi halaman HTML sederhana (bisa saya
-   bantu buatkan `docs/privacy-policy.html` kalau sudah fix mau taruh di
-   folder mana).
-3. Setelah live, catat URL final-nya (misal
-   `https://susantosap-oss.github.io/smartclean2026/privacy-policy.html`).
-4. Paste URL itu ke Play Console → App content → Privacy Policy.
-5. Opsional: update tombol/link di layar Privacy Policy dalam app supaya
-   mengarah ke URL yang sama (biar konsisten in-app vs web).
+**🔗 https://susantosap-oss.github.io/policy_privacy/**
 
-**Kabari saya kalau GitHub Pages-nya sudah aktif** — saya bikinkan halaman
-HTML-nya dan pastikan formatnya sesuai isi `privacy_policy.txt` yang sekarang.
+- Isi sinkron dengan `privacy_policy.txt` (7 bagian bernomor + kontak),
+  ikut tema dark/light otomatis.
+- Layar Privacy Policy in-app (`src/index.html`) sudah ditambah link
+  "🔗 Baca versi lengkap di web" yang mengarah ke URL ini.
+- **Sisa kerjaan:** paste URL ini ke Play Console → App content → Privacy
+  Policy saat submit nanti.
 
 ---
 
@@ -143,9 +137,10 @@ Belum ada satupun di repo ini:
 ```
 1. Siapkan akun Play Console (prasyarat semuanya)
 2. Release signing config (upload keystore + Play App Signing)
-3. Hosting Privacy Policy → GitHub Pages
+3. [SELESAI] Hosting Privacy Policy → GitHub Pages
 4. Buat in-app product smartclean_pro di Play Console
 5. Isi Data Safety + Content Rating + deklarasi permission sensitif
+   (paste URL Privacy Policy di sini)
 6. minifyEnabled true + bersihkan Log.d/Log.e + retest
 7. Aset store listing (icon 512, feature graphic, screenshot, deskripsi)
 8. Testing di device tambahan
