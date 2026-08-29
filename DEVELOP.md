@@ -75,7 +75,7 @@ Selesaikan ini sebelum submit ke Play Store:
 | **Duplicate Finder full** | Semua tipe file, semua hasil, auto-select |
 | **Camera/Gallery Cleaner** | Full akses |
 | **Unused App Cleaner** | Full akses |
-| **Browser Cache Clean** | Hapus, bukan hanya scan |
+| ~~Browser Cache Clean~~ | **Dihapus dari tabel ini** — Android scoped storage (11+) memblokir total akses `Android/data/<pkg lain>/cache`, jadi fitur ini tidak pernah benar-benar bisa menghapus apa pun. Sudah di-delock dari Pro & diganti tombol "Buka Cleaner Bawaan Sistem" di menu Advance (gratis untuk semua user, karena tidak ada kapabilitas Pro nyata yang ditahan). App Cache & Game Cache dihapus total dengan alasan sama — lihat komentar di `FileCleanerPlugin.java`. |
 | **Before/After Result Panel** | Visualisasi dampak cleaning |
 | **Private DNS / Remove Ads** shortcut | Full akses |
 | Defrag & Boost | Tanpa batas harian |
@@ -230,11 +230,125 @@ Keywords utama yang kompetitornya lemah:
 
 ---
 
+## Phase 6 — Fitur Tambahan (Backlog)
+
+Prinsip pemilihan fitur baru setelah insiden App/Browser/Game Cache: **hanya fitur yang
+beroperasi di shared/user storage** (DCIM, Download, Movies, Pictures, Documents, atau
+folder publik milik app lain seperti Telegram) yang boleh diklaim "bisa dibersihkan" —
+apa pun di `Android/data/<pkg lain>/...` tidak bisa diakses SmartClean sama sekali,
+berapa pun izin yang di-grant (lihat komentar di `FileCleanerPlugin.java`).
+
+Kandidat, urutan prioritas:
+
+1. **Big Files Finder** (★ rekomendasi utama) — scan file besar (>100MB) di
+   DCIM/Download/Movies/Documents, sort by size, user pilih mana yang mau dihapus.
+   Dampak besar (1 video 500MB > ratusan file cache kecil), teknis paling simpel (tidak
+   perlu whitelist ekstensi), fully accessible tanpa hambatan scoped storage. Tidak
+   overlap dengan fitur yang sudah ada.
+2. **APK Installer Cleaner** — file `.apk` nyasar di folder Download setelah
+   install/sideload manual. Selalu jadi junk begitu instalasi selesai, aman dihapus.
+3. **Empty Folder Cleanup** — folder kosong sisa app yang sudah di-uninstall atau file
+   yang sudah dipindah/dihapus manual. Size kecil tapi murah diimplementasi — bisa pakai
+   ulang `getFolderSize()`/`deleteRecursiveDir()` yang sudah ada.
+4. **Download Folder — file lama tak tersentuh** (mis. >90 hari, belum masuk kategori
+   lain) — mirip pola WhatsApp Cleaner tapi generik untuk semua file di Download, dengan
+   pilihan rentang waktu.
+5. **Extend WA Cleaner ke app chat lain** (Telegram, dll) — Telegram sengaja simpan
+   media di folder publik (`Telegram/Telegram Images`, `Telegram Video`, dst) supaya
+   file manager bisa akses, pola persis WhatsApp — tinggal tambah entry mirip `WA_APPS`.
+6. **Screen Recording Cleanup** — video rekaman layar biasanya besar & jarang ditonton
+   ulang, menumpuk di `Movies`/`DCIM`.
+
+---
+
+## Phase 7 — Growth: Program Referral via WhatsApp Share
+
+Mekanisme yang diminta: user share link Play Store app ke nomor WA → terkirim → WA
+mengirim signal `RESULT_OK` ke SmartClean → counter +1 → di 10x sukses, user dapat
+pilihan buka 1 fitur Pro selama 60 hari. Guard: cooldown timer + limit harian + tidak
+boleh kirim ke nomor yang sama berulang.
+
+### ⚠️ Catatan teknis penting — cek dulu sebelum implementasi
+`startActivityForResult` ke WhatsApp **tidak reliably mengembalikan `RESULT_OK` saat
+pesan benar-benar terkirim**. WhatsApp tidak memanggil `setResult(RESULT_OK)` sebelum
+activity share/chat-nya `finish()` — default Android kalau activity finish tanpa
+`setResult()` eksplisit adalah `RESULT_CANCELED`, bukan `RESULT_OK`. Ini kendala umum
+yang bikin banyak app dengan pola "referral via share" serupa gagal total di produksi.
+Ini harus dicek/dites ulang di awal sesi berikutnya sebelum bangun fitur di atasnya —
+jangan asumsikan `RESULT_OK` = pesan terkirim.
+
+Opsi realistis (pilih salah satu saat implementasi):
+- **(a) Heuristik "kembali dari WhatsApp"** — anggap "share dihitung" kalau user
+  kembali ke SmartClean dari WhatsApp setelah minimal beberapa detik (bukan langsung
+  back instan) — best-effort, bukan bukti pesan terkirim, tapi cukup jujur untuk
+  dijelaskan ke user sebagai "berbagi", bukan "terkirim ke X orang".
+- **(b) Play Install Referrer API** — cara standar industri untuk referral yang bisa
+  dibuktikan: tiap user dapat link unik, install baru dari link itu terbaca oleh
+  `com.android.installreferrer` di sisi user baru, lalu dikreditkan ke referrer. Lebih
+  akurat tapi butuh infrastruktur (server/Firebase) untuk mencocokkan siapa mereferensi
+  siapa — bukan solusi tanpa backend.
+- **(c) Trust-based sederhana** — hitung "percobaan share" (intent WA berhasil dibuka),
+  bukan "bukti terkirim/diinstall". Paling simpel, selaras dengan guard cooldown+limit
+  yang sudah diminta (guard itu baru berguna kalau memang basisnya trust-based, karena
+  opsi (b) sudah punya proteksi anti-abuse dari sisi install-nya sendiri).
+
+Guard anti-abuse (berlaku untuk opsi manapun yang dipilih):
+- Cooldown timer antar-share (mis. 30–60 detik) supaya tidak spam tap berulang.
+- Limit harian jumlah share yang dihitung (mis. maks 3–5/hari) supaya 10x tidak
+  dicapai dalam sehari dengan spam ke banyak nomor sekaligus.
+- Simpan nomor yang sudah pernah dikirimi (hash, bukan plaintext) supaya submit ke
+  nomor yang sama tidak dihitung dua kali.
+
+---
+
+## Phase 8 — Anti-Tamper / App Guard (R8 + Verifikasi Purchase)
+
+**Fase terakhir sebelum submit ke Play Store**, sesuai arahan: pastikan APK/AAB tidak
+bisa dimodifikasi jadi `.apk.mod` yang membuka fitur Paid tanpa bayar.
+
+### ⚠️ Temuan penting: R8 saja TIDAK menutup celah utama
+R8/ProGuard (sudah jadi checklist item di Phase 1) hanya memproses bytecode Java/Kotlin
+— **tidak menyentuh bundle web** (`src/js/app.js`, `src/index.html`, `src/css/style.css`)
+yang di-ship Capacitor sebagai file **plaintext, tidak diminify, tidak diobfuscate** di
+dalam APK (`android/app/src/main/assets/public/`). Saat ini seluruh logic pengecekan
+Pro (`isPro`, `checkDailyLimit()`, `requirePro()`, cache key `sc_is_pro` di
+`localStorage`) hidup di JS itu. Artinya siapa pun bisa: unzip APK → edit `app.js` di
+text editor (mis. paksa `isPro = true` atau `function checkDailyLimit(){return true}`)
+→ re-zip → re-sign pakai key sendiri → jadi APK modded yang buka semua fitur Pro. R8
+sama sekali tidak melindungi jalur ini karena R8 tidak pernah menyentuh file JS.
+
+Prioritas perbaikan (urutan dampak, bukan urutan Phase 1's checklist):
+1. **Verifikasi purchase signature** — `BillingClient` mengembalikan `purchaseToken` +
+   `signature` + `originalJson` per purchase, tapi tidak otomatis memvalidasinya.
+   Implementasikan `Security.verifyPurchase()` (RSA-SHA1 terhadap public key Base64 dari
+   Play Console → App integrity/Monetization setup) di sisi **native Java**
+   (`BillingManagerPlugin.java`), bukan di JS — supaya hasil `isPro` yang dikirim ke JS
+   sudah tervalidasi, dan JS tidak pernah jadi satu-satunya sumber kebenaran.
+2. **Pindahkan gating logic sensitif ke native** — minimal, native plugin yang
+   validasi purchase harus jadi satu-satunya pintu untuk unlock fitur yang benar-benar
+   berat (mis. Clean Now tanpa limit) — jangan biarkan JS bisa "memutuskan sendiri" isPro
+   tanpa tanya native setiap kali.
+3. **Runtime signature check** — di `MainActivity` atau plugin, baca signing
+   certificate sendiri (`PackageManager.GET_SIGNING_CERTIFICATES` di API 28+) dan
+   bandingkan hash-nya ke hash yang di-hardcode saat build. APK yang di-mod otomatis
+   re-signed pakai key lain (attacker tidak punya private key asli) → hash tidak cocok →
+   app bisa menolak jalan / diam-diam tetap Free-tier.
+4. **Play Integrity API** (pengganti SafetyNet, direkomendasikan Google) — deteksi resmi
+   "APK sudah dimodifikasi" / "bukan device asli" / "bukan instalasi dari Play Store".
+   Ini pendekatan paling modern & didukung Google, layak jadi lapisan utama, bukan cuma
+   pelengkap.
+5. **R8 + ProGuard rules** (sudah ada di checklist Phase 1) — tetap perlu, mempersulit
+   reverse-engineering native code (termasuk hasil implementasi poin 1–3 di atas), tapi
+   posisinya sebagai lapisan tambahan, bukan proteksi utama.
+
+---
+
 ## Catatan Prioritas Pengerjaan
 
 ```
-[Sekarang]     → Testing & bug fixing semua fitur yang ada
-[Setelah stabil] → Implementasi Google Play Billing (in-app purchase)
+[Sekarang]        → Testing & bug fixing semua fitur yang ada
+[Setelah stabil]  → Implementasi Google Play Billing (in-app purchase)
 [Setelah billing] → Implementasi AdMob banner (free user saja)
-[Terakhir]     → Persiapan aset Play Store & submit
+[Growth]          → Fitur tambahan (Phase 6) & Program Referral (Phase 7)
+[Terakhir]        → Anti-Tamper / App Guard (Phase 8) → baru Persiapan aset Play Store & submit
 ```

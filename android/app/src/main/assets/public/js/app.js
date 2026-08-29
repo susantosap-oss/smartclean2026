@@ -8,7 +8,7 @@ if (window.Capacitor) {
   const _pm = n => n.map(name => ({ name, rtype: 'promise' }));
   _ph.push(
     { name: 'MemoryBooster',    methods: _pm(['getStorageStats','getMemoryStats','boostMemory','optimizeStorage','getRunningApps','stopApps','getBatteryInfo']) },
-    { name: 'FileCleaner',      methods: _pm(['scanJunkFiles','cleanJunkFiles','deleteFiles','scanWAMedia','scanCameraMedia','scanBrowserCache','clearBrowserCache','clearNotifications','requestNotificationAccess','scanRecentlyDeleted','cleanRecentlyDeleted']) },
+    { name: 'FileCleaner',      methods: _pm(['scanJunkFiles','cleanJunkFiles','deleteFiles','scanWAMedia','scanCameraMedia','clearNotifications','requestNotificationAccess','scanRecentlyDeleted','cleanRecentlyDeleted']) },
     { name: 'DuplicateFinder',  methods: _pm(['scanDuplicates','deleteFiles']) },
     { name: 'AppManager',       methods: _pm(['scanUnusedApps','uninstallApp','openNetworkSettings','openStorageSettings','setKeepScreenOn']) },
     { name: 'BillingManager',   methods: _pm(['getProStatus','getProductDetails','purchasePro','restorePurchases']) },
@@ -19,6 +19,36 @@ if (window.Capacitor) {
 // ── Capacitor plugin registration ──
 const { registerPlugin } = window.Capacitor || {};
 const FileCleaner    = registerPlugin ? registerPlugin('FileCleaner')   : null;
+let scanProgressActive = false;
+let cleanProgressActive = false;
+if (FileCleaner) {
+  FileCleaner.addListener('scanProgress', (data) => {
+    if (!scanProgressActive) return;
+    updateScanRingProgress(data.percent);
+  });
+  FileCleaner.addListener('cleanProgress', (data) => {
+    if (!cleanProgressActive) return;
+    updateCleanProgressPopup(data.percent);
+  });
+}
+function updateScanRingProgress(percent) {
+  const p = Math.max(0, Math.min(100, percent));
+  setRingProgress(document.getElementById('cleanRingArc'), p / 100);
+  document.getElementById('cleanSize').textContent = p + '%';
+}
+function updateCleanProgressPopup(percent) {
+  const p = Math.max(0, Math.min(100, percent));
+  const offset = 314 - (314 * p / 100);
+  document.getElementById('cleanProgressArc').style.strokeDashoffset = offset;
+  document.getElementById('cleanProgressPercent').textContent = p + '%';
+}
+function showCleanProgressPopup() {
+  updateCleanProgressPopup(0);
+  document.getElementById('cleanProgressModal').classList.remove('hidden');
+}
+function hideCleanProgressPopup() {
+  document.getElementById('cleanProgressModal').classList.add('hidden');
+}
 const MemoryBooster  = registerPlugin ? registerPlugin('MemoryBooster') : null;
 const DupFinder      = registerPlugin ? registerPlugin('DuplicateFinder') : null;
 const AppManager     = registerPlugin ? registerPlugin('AppManager')    : null;
@@ -393,13 +423,16 @@ window.closeResultPanel = function() {
   resetClean();
 };
 
+function setScreenAwake(on) {
+  if (AppManager) AppManager.setKeepScreenOn({ enabled: on }).catch(() => {});
+}
 function showOpProgress() {
   document.getElementById('opProgress').classList.remove('hidden');
-  if (AppManager) AppManager.setKeepScreenOn({ enabled: true }).catch(() => {});
+  setScreenAwake(true);
 }
 function hideOpProgress() {
   document.getElementById('opProgress').classList.add('hidden');
-  if (AppManager) AppManager.setKeepScreenOn({ enabled: false }).catch(() => {});
+  setScreenAwake(false);
 }
 
 function resetClean() {
@@ -432,14 +465,17 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
 // ════════════════════════════════════════
 //  CLEAN SECTION
 // ════════════════════════════════════════
+// "App Cache" / "Browser Cache" / "Game Cache" buckets were removed: Android's scoped
+// storage (Android 11+) blocks any third-party app — SmartClean included, regardless of
+// permissions granted — from reading or clearing OTHER apps' Android/data/<pkg>/cache.
+// Those buckets only ever reported SmartClean's own trivial cache or a permanent 0, which
+// looked like a working feature but never was. See the "Browser Cleaner" advance-menu
+// card for the honest replacement (deep-links to the OS's own storage cleaner).
 const CLEAN_ITEMS = [
   { id:'tmp',     icon:'🗂️',  title:'Temporary Files',     sub:'tmp · temp · thumbs',    type:'TMP' },
   { id:'msg',     icon:'💬',  title:'WA Database (.crypt14)',   sub:'Sisakan file terbaru',    type:'MSG' },
   { id:'junk',    icon:'🗑️',  title:'Junk & Ad Files',     sub:'ads · cache · residual',  type:'JUNK' },
-  { id:'appcache',icon:'📦',  title:'App Cache',           sub:'Semua cache aplikasi',    type:'APPCACHE' },
-  { id:'browser', icon:'🌐',  title:'Browser Cache',       sub:'Chrome · Firefox · etc',  type:'BROWSER' },
   { id:'notif',   icon:'🔔',  title:'Notifications',       sub:'Hapus notifikasi tersisa', type:'NOTIF' },
-  { id:'game',    icon:'🎮',  title:'Game Cache & Data',   sub:'Cache & data game',       type:'GAME' },
 ];
 
 let cleanData = {};
@@ -484,11 +520,15 @@ async function scanClean() {
   btn.innerHTML = '<span>⏳</span> Scanning…';
   btn.disabled = true;
   cleanSelected.clear();
-  showOpProgress();
+  setScreenAwake(true);
   document.getElementById('cleanRing').classList.add('ring-scanning');
   document.getElementById('cleanLabel').textContent = 'Scanning…';
-  document.getElementById('scanPb').classList.remove('hidden');
+  const scanInfoEl = document.querySelector('.scan-info-text');
+  if (scanInfoEl) scanInfoEl.classList.add('si-active');
+  scanProgressActive = true;
+  updateScanRingProgress(0);
 
+  let demoTicker = null;
   try {
     let results = {};
     if (FileCleaner) {
@@ -502,23 +542,29 @@ async function scanClean() {
         ), 500);
       }
     } else {
+      // No native plugin (browser preview) — simulate a running percentage so the ring is testable.
+      let pct = 0;
+      demoTicker = setInterval(() => { pct = Math.min(96, pct + 6); updateScanRingProgress(pct); }, 110);
       results = { tmp:45*1024*1024, msg:12*1024*1024, junk:88*1024*1024,
                   appcache:230*1024*1024, browser:67*1024*1024, notif:1024*1024, game:155*1024*1024,
                   notifAccessGranted: true };
       await new Promise(r => setTimeout(r, 1800));
     }
+    updateScanRingProgress(100);
     renderCleanList(results);
     const total = Object.values(results).filter(v => typeof v === 'number').reduce((a, b) => a + b, 0);
     toast(`Scan selesai! Ditemukan ${fmt(total)} junk.`);
   } catch(e) {
     toast('Scan error: ' + e.message, 'error');
   } finally {
+    if (demoTicker) clearInterval(demoTicker);
+    scanProgressActive = false;
     btn.innerHTML = '<span>🔍</span> Scan Junk';
     btn.disabled = false;
-    hideOpProgress();
+    setScreenAwake(false);
     document.getElementById('cleanRing').classList.remove('ring-scanning');
     document.getElementById('cleanLabel').textContent = 'Junk Found';
-    document.getElementById('scanPb').classList.add('hidden');
+    if (scanInfoEl) scanInfoEl.classList.remove('si-active');
   }
 }
 
@@ -533,17 +579,25 @@ async function cleanNow() {
     const btn = document.getElementById('btnCleanNow');
     btn.disabled = true;
     btn.textContent = '⏳ Cleaning…';
-    showOpProgress();
+    setScreenAwake(true);
+    cleanProgressActive = true;
+    showCleanProgressPopup();
 
+    let demoTicker = null;
+    let succeeded = false;
     try {
       const before = await captureStats();
 
       if (FileCleaner) {
         await FileCleaner.cleanJunkFiles({ types });
       } else {
+        // No native plugin (browser preview) — simulate a running percentage.
+        let pct = 0;
+        demoTicker = setInterval(() => { pct = Math.min(96, pct + 7); updateCleanProgressPopup(pct); }, 130);
         demo.storageUsed = Math.max(0, demo.storageUsed - totalBytes);
         await new Promise(r => setTimeout(r, 1500));
       }
+      updateCleanProgressPopup(100);
 
       const after = computeAfter(before, totalBytes);
       await loadStorageInfo();
@@ -556,12 +610,19 @@ async function cleanNow() {
 
       markDailyUsed('clean');
       showResultPanel(before, after, totalBytes, details);
+      succeeded = true;
     } catch(e) {
       toast('Clean gagal: ' + e.message, 'error');
     } finally {
-      hideOpProgress();
+      if (demoTicker) clearInterval(demoTicker);
+      cleanProgressActive = false;
+      hideCleanProgressPopup();
       btn.disabled = false;
       btn.textContent = '🧹 Clean Now';
+      // Keep the screen on a bit longer so the before/after result panel doesn't get cut
+      // off by the OS's own screen timeout right as it appears.
+      if (succeeded) setTimeout(() => setScreenAwake(false), 12000);
+      else setScreenAwake(false);
     }
   });
 }
@@ -1140,71 +1201,20 @@ document.getElementById('btnDeleteWA').addEventListener('click', async () => {
 });
 
 // ── Browser Cleaner ────────────────────────────────────────────────────────────
-async function scanBrowserCache() {
-  const btn = document.getElementById('btnScanBrowser');
-  btn.textContent = '⏳ Scanning…';
-  btn.disabled = true;
-  closeResultPanel();
+// Used to scan/clear each browser's Android/data/<pkg>/cache directly (and gated
+// clearing behind Pro), but Android's scoped storage blocks any third-party app from
+// reading or writing another app's Android/data folder — so this always scanned 0
+// bytes and never actually freed anything, Pro or not. The only honest, working option
+// is the same one "Bersihkan Cache Semua App" already uses: hand the user off to the
+// OS's own storage cleaner. Free for everyone now since there's no real Pro-tier
+// capability being withheld.
+document.getElementById('btnOpenBrowserSettings').addEventListener('click', async () => {
   try {
-    let browsers = [];
-    if (FileCleaner) {
-      const res = await FileCleaner.scanBrowserCache();
-      browsers = res.browsers || [];
-    } else {
-      browsers = [
-        { name:'Chrome',          pkg:'com.android.chrome',             icon:'🟡', cacheBytes:145*1024*1024 },
-        { name:'Firefox',         pkg:'org.mozilla.firefox',            icon:'🦊', cacheBytes:67*1024*1024 },
-        { name:'Samsung Browser', pkg:'com.sec.android.app.sbrowser',   icon:'🔵', cacheBytes:38*1024*1024 },
-        { name:'Opera',           pkg:'com.opera.browser',              icon:'🔴', cacheBytes:22*1024*1024 },
-      ];
-      await new Promise(r => setTimeout(r, 700));
-    }
-    const total = browsers.reduce((s,b) => s+b.cacheBytes, 0);
-    document.getElementById('browserList').innerHTML = browsers.map(b => `
-      <div class="browser-item">
-        <div class="browser-item-icon">${b.icon}</div>
-        <div class="browser-item-name">${b.name}</div>
-        <div class="browser-item-size">${fmt(b.cacheBytes)}</div>
-      </div>`).join('');
-    document.getElementById('browserSub').textContent = `Total cache: ${fmt(total)}`;
-    document.getElementById('browserActions').style.display = 'flex';
-    toast(`Browser cache: ${fmt(total)}`);
-  } catch(e) {
-    toast('Browser scan error', 'error');
-  } finally {
-    btn.textContent = '🔍 Scan Browser Cache';
-    btn.disabled = false;
+    if (AppManager) await AppManager.openStorageSettings();
+    else toast('Buka Settings → Storage atau Phone Manager secara manual');
+  } catch (e) {
+    toast('Tidak bisa membuka Storage Settings: ' + e.message, 'error');
   }
-}
-
-document.getElementById('btnScanBrowser').addEventListener('click', scanBrowserCache);
-document.getElementById('btnClearBrowser').addEventListener('click', async () => {
-  if (!requirePro('Menghapus Browser Cache adalah fitur Pro. Versi Free hanya bisa scan.')) return;
-  showModal('Clear Browser Cache', 'Hapus semua cache browser yang ditemukan?', async () => {
-    const before = await captureStats();
-    try {
-      let freed = 0;
-      document.querySelectorAll('.browser-item-size').forEach(el => {
-        freed += parseFloat(el.textContent) * (el.textContent.includes('MB') ? 1024*1024 : 1024);
-      });
-      if (FileCleaner) { const res = await FileCleaner.clearBrowserCache(); freed = res.freedBytes || freed; }
-      else { demo.storageUsed = Math.max(0, demo.storageUsed - freed); await new Promise(r => setTimeout(r, 1000)); }
-
-      document.getElementById('browserList').innerHTML = '';
-      document.getElementById('browserActions').style.display = 'none';
-      document.getElementById('browserSub').textContent = 'Chrome, Firefox, Default';
-
-      const after = computeAfter(before, freed);
-      await loadStorageInfo();
-
-      showResultPanel(before, after, freed, [
-        { icon:'🌐', label:'Browser dibersihkan', value: '4 browsers' },
-        { icon:'🍪', label:'Cache dihapus',       value: fmt(freed) },
-        { icon:'🔒', label:'History/cookies',     value: 'Intact' },
-      ]);
-      toast('✅ Browser cache dibersihkan!');
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
-  });
 });
 
 // ── Camera / Gallery Cleaner ───────────────────────────────────────────────────

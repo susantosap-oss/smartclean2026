@@ -116,8 +116,11 @@
           <div class="ring-inner">
             <div class="ring-value" id="cleanSize">0 MB</div>
             <div class="ring-label" id="cleanLabel">Junk Found</div>
-            <div class="scan-pb hidden" id="scanPb"><div class="scan-pb-fill"></div></div>
           </div>
+        </div>
+        <div class="scan-info-text">
+          <span class="sit-icon">ℹ️</span>
+          <span>Kecepatan proses scan tergantung kepada kapasitas Internal Storage dan banyaknya file junk yang di-scan.</span>
         </div>
       </div>
 
@@ -277,23 +280,24 @@
         </div>
       </div>
 
-      <!-- Browser Cleaner -->
+      <!-- Browser Cleaner (shortcut to OS-level cache cleaner — free, not Pro-locked,
+           since there's no real Pro-tier capability being withheld) -->
       <div class="adv-card" id="advBrowser">
         <div class="adv-header" onclick="toggleAdv('browser')">
           <div class="adv-icon">🌐</div>
           <div class="adv-title-wrap">
             <div class="adv-title">Browser Cleaner</div>
-            <div class="adv-sub" id="browserSub">Chrome, Firefox, Default</div>
+            <div class="adv-sub">Chrome, Firefox, Samsung Internet, dll</div>
           </div>
           <div class="adv-chevron" id="chevBrowser">▼</div>
         </div>
         <div class="adv-body hidden" id="browserBody">
-          <div id="browserList" class="browser-list"></div>
-          <button class="btn-scan-adv" id="btnScanBrowser">🔍 Scan Browser Cache</button>
-          <div id="browserFileList" class="file-list"></div>
-          <div class="action-row" id="browserActions" style="display:none">
-            <button class="btn-primary" id="btnClearBrowser">🗑 Clear Browser Cache <span class="pro-lock">🔒 PRO</span></button>
-          </div>
+          <p class="ads-desc">
+            Android tidak mengizinkan app pihak ketiga (termasuk SmartClean) membaca atau
+            menghapus cache browser lain secara langsung. Satu-satunya cara resmi & aman
+            untuk membersihkan cache browser adalah lewat cleaner bawaan sistem HP kamu.
+          </p>
+          <button class="btn-scan-adv" id="btnOpenBrowserSettings">🧹 Buka Cleaner Bawaan Sistem</button>
         </div>
       </div>
 
@@ -492,6 +496,23 @@
       <button class="btn-secondary" id="modalCancel">Cancel</button>
       <button class="btn-primary" id="modalOk">OK</button>
     </div>
+  </div>
+</div>
+
+<!-- ─── Clean Progress Popup ─── -->
+<div id="cleanProgressModal" class="modal hidden">
+  <div class="modal-box clean-progress-box">
+    <div class="cp-ring">
+      <svg class="cp-ring-svg" viewBox="0 0 120 120">
+        <circle class="cp-ring-bg" cx="60" cy="60" r="50"/>
+        <circle class="cp-ring-fg" cx="60" cy="60" r="50" id="cleanProgressArc"
+                stroke-dasharray="314" stroke-dashoffset="314"/>
+      </svg>
+      <div class="cp-ring-inner">
+        <div class="cp-percent" id="cleanProgressPercent">0%</div>
+      </div>
+    </div>
+    <div class="cp-label">🧹 Membersihkan file…</div>
   </div>
 </div>
 
