@@ -30,6 +30,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import android.app.usage.StorageStats;
 import android.app.usage.StorageStatsManager;
@@ -47,6 +49,10 @@ public class FileCleanerPlugin extends Plugin {
     // nest deeper than a shallow cap allows, silently hiding files below it.
     private static final int MAX_SCAN_DEPTH = 14;
 
+    // Share (out of 100) of scan progress attributed to the combined root-storage walk;
+    // the remaining few points are reserved for the final resolve step.
+    private static final int ROOT_WEIGHT = 97;
+
     // ─── Extensions ───────────────────────────────────────────────────────────
     private static final List<String> TMP_EXT = Arrays.asList(
         ".tmp", ".temp", ".bak", ".old", ".dmp", ".swp", "~"
@@ -58,19 +64,6 @@ public class FileCleanerPlugin extends Plugin {
         ".log", ".trace", ".crash", ".ads", ".nomedia_tmp",
         ".dmp", ".hprof", ".err", ".stackdump",
         ".DS_Store", "thumbs.db", "desktop.ini"
-    );
-    private static final List<String> BROWSER_PKGS = Arrays.asList(
-        "com.android.chrome", "org.mozilla.firefox", "com.opera.browser",
-        "com.microsoft.emmx", "com.brave.browser", "com.UCMobile.intl",
-        "com.sec.android.app.sbrowser", "com.android.browser"
-    );
-    private static final List<String> GAME_KEYWORDS = Arrays.asList(
-        "game", "games", "gaming",
-        "pubg", "mlbb", "freefire", "codm", "clash",
-        "roblox", "minecraft", "genshin", "honkai", "among",
-        "supercell", "gameloft", "king", "zynga", "nexon",
-        "bandai", "capcom", "squareenix", "ubisoft", "activision",
-        "garena", "moonton", "netease", "mihoyo", "hoyoverse"
     );
     // WhatsApp / WhatsApp Business media roots. On Android 11+ (scoped storage)
     // both apps write under Android/media/<pkg>/..., not the legacy top-level
@@ -89,35 +82,43 @@ public class FileCleanerPlugin extends Plugin {
     private static final String DB_BACKUP_EXT = ".db.crypt14";
 
     // ─── Scan All Junk ────────────────────────────────────────────────────────
+    // Used to also scan "App Cache" (all installed apps), "Browser Cache" and "Game
+    // Cache" here, but Android's scoped storage (enforced since Android 11) blocks any
+    // third-party app — SmartClean included, regardless of permissions granted — from
+    // reading OTHER apps' Android/data/<pkg>/cache at all. In practice those three
+    // buckets only ever reported SmartClean's own trivial cache (App Cache) or a
+    // permanent 0 (Browser/Game Cache, since neither package list ever includes
+    // SmartClean itself) — numbers that looked like a working feature but never were.
+    // Removed rather than kept as dead weight; see the "Browser Cleaner" advance-menu
+    // card for the honest replacement (deep-links to the OS's own storage cleaner).
     @PluginMethod
     public void scanJunkFiles(PluginCall call) {
         getActivity().runOnUiThread(() -> {});
         new Thread(() -> {
             try {
-                long tmpSize    = scanTmpFiles();
-                long msgSize    = scanDbFiles();
-                long junkSize   = scanJunkDir();
-                long appCache   = getAppCacheSize();
-                long browserSz  = getBrowserCacheSize();
-                long gameCache  = getGameCacheSize();
-                int  notifCount = getNotifCount();
+                final AtomicInteger progress = new AtomicInteger(0);
+                ScanTotals totals = scanRootCombined(progress);
 
-                Log.e(TAG, "SCAN RESULT: tmp="     + tmpSize   + " msg=" + msgSize
-                    + " junk=" + junkSize + " appcache=" + appCache);
+                long tmpSize    = totals.tmp;
+                long junkSize   = totals.junk + scanOrphanedAppData();
+                long msgSize    = sizeDbBackups(totals.dbFiles);
+                int  notifCount = getNotifCount();
                 boolean notifGranted = NotificationService.instance != null;
-                Log.e(TAG, "SCAN RESULT: browser=" + browserSz + " game=" + gameCache
-                    + " notif=" + notifCount
-                    + " notifSvcConnected=" + notifGranted);
+
+                JSObject doneProgress = new JSObject();
+                doneProgress.put("percent", 100);
+                doneProgress.put("stage", "done");
+                notifyListeners("scanProgress", doneProgress);
+
+                Log.e(TAG, "SCAN RESULT: tmp=" + tmpSize + " msg=" + msgSize + " junk=" + junkSize
+                    + " notif=" + notifCount + " notifSvcConnected=" + notifGranted);
 
                 JSObject result = new JSObject();
                 JSObject data = new JSObject();
                 data.put("tmp",              tmpSize);
                 data.put("msg",              msgSize);
                 data.put("junk",             junkSize);
-                data.put("appcache",         appCache);
-                data.put("browser",          browserSz);
                 data.put("notif",            notifCount * 1024L);
-                data.put("game",             gameCache);
                 data.put("notifAccessGranted", notifGranted);
                 result.put("data", data);
                 call.resolve(result);
@@ -129,6 +130,11 @@ public class FileCleanerPlugin extends Plugin {
     }
 
     // ─── Clean selected types ─────────────────────────────────────────────────
+    // The tmp/thumbnail-dir/junk/db-backup deletion is done in ONE combined walk
+    // (deleteCombinedRoot(), gated per-type so partial selections behave exactly like
+    // before) instead of up to 8 separate full-tree delete walks — this is what was
+    // making "Select All" clean take 50-70s. "appcache"/"browser"/"game" types were
+    // removed along with their scan buckets — see scanJunkFiles()'s comment.
     @PluginMethod
     public void cleanJunkFiles(PluginCall call) {
         JSArray typesArr = call.getArray("types");
@@ -143,13 +149,22 @@ public class FileCleanerPlugin extends Plugin {
                 }
 
                 Log.e(TAG, "cleanJunkFiles types=" + types);
-                if (types.contains("tmp"))     { freed += cleanTmpFiles();                                          Log.e(TAG, "tmp done freed="+freed); }
-                if (types.contains("msg"))     { freed += cleanDbFiles();                                           Log.e(TAG, "msg done freed="+freed); }
-                if (types.contains("junk"))    { freed += deleteRecursive(getExternalRoot(), f -> matchesJunk(f)); freed += cleanOrphanedAppData(); Log.e(TAG, "junk done freed="+freed); }
-                if (types.contains("appcache")){ freed += clearOwnCache();                                          Log.e(TAG, "appcache done freed="+freed); }
-                if (types.contains("browser")) { freed += clearBrowserCacheFiles();                                 Log.e(TAG, "browser done freed="+freed); }
-                if (types.contains("notif"))   { dismissAllNotifications();                                         Log.e(TAG, "notif done"); }
-                if (types.contains("game"))    { freed += clearGameCache();                                         Log.e(TAG, "game done freed="+freed); }
+                final AtomicInteger progress = new AtomicInteger(0);
+                boolean doTmp  = types.contains("tmp");
+                boolean doMsg  = types.contains("msg");
+                boolean doJunk = types.contains("junk");
+
+                if (doTmp || doMsg || doJunk) {
+                    CleanTotals ct = deleteCombinedRoot(doTmp, doJunk, progress);
+                    freed += ct.freed;
+                    Log.e(TAG, "root walk done freed=" + freed);
+                    if (doMsg)  { freed += pruneDbBackups(ct.dbFiles); Log.e(TAG, "msg done freed="+freed); }
+                    if (doJunk) { freed += cleanOrphanedAppData();     Log.e(TAG, "junk done freed="+freed); }
+                }
+                bumpProgress(progress, 90, "root", "cleanProgress");
+
+                if (types.contains("notif")) { dismissAllNotifications(); bumpProgress(progress, 96, "notif", "cleanProgress"); Log.e(TAG, "notif done"); }
+                bumpProgress(progress, 100, "done", "cleanProgress");
                 Log.e(TAG, "cleanJunkFiles DONE freed=" + freed);
 
                 JSObject res = new JSObject();
@@ -307,57 +322,6 @@ public class FileCleanerPlugin extends Plugin {
         }
     }
 
-    // ─── Scan Browser Cache ───────────────────────────────────────────────────
-    // Reports only the externally-reachable cache folder size (same scope
-    // clearBrowserCacheFiles() deletes) — NOT StorageStatsManager's OS-reported total,
-    // which includes each browser's private internal cache that no third-party app can
-    // delete. Reporting the OS total here made the number reappear unchanged after every
-    // Clean Now, since the internal-cache portion was never actually removable.
-    @PluginMethod
-    public void scanBrowserCache(PluginCall call) {
-        new Thread(() -> {
-            try {
-                JSArray browsers = new JSArray();
-                PackageManager pm = getContext().getPackageManager();
-                String[] icons = {"🟡","🦊","🔵","🔴","🦁","🌐","🌐","🌐"};
-                int ic = 0;
-
-                for (String pkg : BROWSER_PKGS) {
-                    try {
-                        ApplicationInfo info = pm.getApplicationInfo(pkg, 0);
-                        File cacheDir = new File(Environment.getExternalStorageDirectory(), "Android/data/" + pkg + "/cache");
-                        long cacheSize = getFolderSize(cacheDir);
-
-                        JSObject b = new JSObject();
-                        b.put("name", pm.getApplicationLabel(info).toString());
-                        b.put("pkg",  pkg);
-                        b.put("icon", icons[Math.min(ic++, icons.length-1)]);
-                        b.put("cacheBytes", cacheSize);
-                        b.put("cachePath",  cacheDir.getAbsolutePath());
-                        browsers.put(b);
-                    } catch (PackageManager.NameNotFoundException ignored) {}
-                }
-
-                JSObject res = new JSObject();
-                res.put("browsers", browsers);
-                call.resolve(res);
-            } catch (Exception e) {
-                call.reject("Browser scan error: " + e.getMessage());
-            }
-        }).start();
-    }
-
-    // ─── Clear Browser Cache ──────────────────────────────────────────────────
-    @PluginMethod
-    public void clearBrowserCache(PluginCall call) {
-        new Thread(() -> {
-            long freed = clearBrowserCacheFiles();
-            JSObject res = new JSObject();
-            res.put("freedBytes", freed);
-            call.resolve(res);
-        }).start();
-    }
-
     // ─── Clear Notifications ──────────────────────────────────────────────────
     @PluginMethod
     public void clearNotifications(PluginCall call) {
@@ -483,38 +447,97 @@ public class FileCleanerPlugin extends Plugin {
         return Environment.getExternalStorageDirectory();
     }
 
-    private long scanTmpFiles() {
-        long size = 0;
-        File root = getExternalRoot();
-        size += scanForExtensions(root, TMP_EXT, 0);
-        for (String thumbDir : THUMB_DIRS) {
-            size += findDirSize(root, thumbDir, 0);
-        }
-        return size;
+    // ─── Progress reporting ────────────────────────────────────────────────────
+    // Monotonic on purpose: both scanJunkFiles() and cleanJunkFiles() run their walk
+    // on a single background thread with a straightforward increasing budget, so an
+    // absolute cumulative target is safe — clamping to "only ever increase" is just a
+    // safety net against a stray late/duplicate call.
+    private void bumpProgress(AtomicInteger tracker, int target, String stage, String eventName) {
+        int prev;
+        do {
+            prev = tracker.get();
+            if (target <= prev) return;
+        } while (!tracker.compareAndSet(prev, target));
+        JSObject d = new JSObject();
+        d.put("percent", target);
+        d.put("stage", stage);
+        notifyListeners(eventName, d);
     }
 
-    // Deletes both loose *.tmp-style files AND the contents of thumbnail-cache
-    // directories, mirroring scanTmpFiles() exactly. Previously only the
-    // extension-matched files were deleted while thumbnail directories (which are
-    // mostly non-.tmp cached images) were left untouched, so a re-scan right after
-    // cleaning kept reporting the same size.
-    private long cleanTmpFiles() {
-        long freed = 0;
-        File root = getExternalRoot();
-        freed += deleteRecursive(root, f -> matchesTmp(f));
-        for (String thumbDir : THUMB_DIRS) {
-            freed += deleteDirNamed(root, thumbDir, 0);
-        }
-        return freed;
+    private static class ScanTotals {
+        long tmp;
+        long junk;
+        final List<File> dbFiles = new ArrayList<>();
     }
 
-    // WhatsApp / WhatsApp Business encrypted DB backups (*.db.crypt14). Files are
-    // grouped by their containing folder so WhatsApp's and WhatsApp Business's
-    // backups are kept/pruned independently instead of one app's newer backup
-    // wiping out the other app's only backup.
-    private long scanDbFiles() {
-        List<File> dbFiles = new ArrayList<>();
-        findByExtension(getExternalRoot(), DB_BACKUP_EXT, dbFiles, 0);
+    // Progress that needs to know a total in advance (pre-count the tree, then walk it)
+    // has its own failure mode: the count-only pass is itself a full traversal, and if
+    // the FIRST folder visited happens to be large (WhatsApp media, Android/data, ...),
+    // the percent still sits frozen for however long that first folder takes to count —
+    // just shifted earlier instead of fixed. An asymptotic curve sidesteps needing a
+    // total at all: percent = weight * v/(v+K) climbs immediately from the very first
+    // entry visited (v=1) and approaches (never quite reaches) the weight cap as more
+    // entries are seen, so there's no silent phase before the first visible tick, and no
+    // second pass over the tree. The K constant is where progress reads "roughly half the
+    // stage's budget spent" — tuned to typical external-storage file counts.
+    private static final double PROGRESS_HALF_LIFE = 2500.0;
+
+    private static int asymptoticPercent(long visited, int weight) {
+        return (int) Math.round((visited / (visited + PROGRESS_HALF_LIFE)) * weight);
+    }
+
+    // Single combined pass over external storage that computes tmp/junk/db-backup
+    // totals together. Previously tmp-ext, each of the 6 thumbnail-dir names, junk-ext
+    // and db-ext were each scanned via their OWN full recursive walk of the whole
+    // storage (9 walks total) — that repetition, multiplied by however many files are
+    // on the device, is why scan time scaled so badly with storage capacity. One pass
+    // classifies every file/dir against all rule sets at once, reporting progress per
+    // entry visited via the asymptotic curve above.
+    private ScanTotals scanRootCombined(AtomicInteger progress) {
+        ScanTotals totals = new ScanTotals();
+        File root = getExternalRoot();
+        File[] top = root.exists() ? root.listFiles() : null;
+        if (top == null || top.length == 0) {
+            bumpProgress(progress, ROOT_WEIGHT, "root", "scanProgress");
+            return totals;
+        }
+        AtomicLong visited = new AtomicLong(0);
+        for (File t : top) {
+            walkCombined(t, totals, 0, visited, progress);
+        }
+        bumpProgress(progress, ROOT_WEIGHT, "root", "scanProgress");
+        return totals;
+    }
+
+    // Mirrors the union of the old scanTmpFiles()+findDirSize() (a directory named like
+    // a thumbnail cache has its whole size counted, matching the original behavior) and
+    // the old JUNK_EXT/DB_BACKUP_EXT full-tree walks. The TMP_EXT and JUNK_EXT checks
+    // stay independent (not else-if): the original code let a name matching both lists
+    // (".dmp" is in both) count toward both totals, so keeping that avoids silently
+    // shrinking the reported size.
+    private void walkCombined(File f, ScanTotals totals, int depth, AtomicLong visited, AtomicInteger progress) {
+        if (f == null || depth > MAX_SCAN_DEPTH) return;
+        long v = visited.incrementAndGet();
+        bumpProgress(progress, asymptoticPercent(v, ROOT_WEIGHT), "root", "scanProgress");
+        if (f.isDirectory()) {
+            for (String td : THUMB_DIRS) {
+                if (f.getName().equalsIgnoreCase(td)) { totals.tmp += getFolderSize(f); break; }
+            }
+            File[] children = f.listFiles();
+            if (children == null) return;
+            for (File c : children) walkCombined(c, totals, depth + 1, visited, progress);
+        } else {
+            String name = f.getName().toLowerCase();
+            for (String ext : TMP_EXT)  { if (name.endsWith(ext)) { totals.tmp  += f.length(); break; } }
+            for (String ext : JUNK_EXT) { if (name.endsWith(ext)) { totals.junk += f.length(); break; } }
+            if (name.endsWith(DB_BACKUP_EXT)) totals.dbFiles.add(f);
+        }
+    }
+
+    // WhatsApp / WhatsApp Business encrypted DB backups are grouped by their containing
+    // folder so WhatsApp's and WhatsApp Business's backups are kept/pruned independently
+    // instead of one app's newer backup wiping out the other app's only backup.
+    private long sizeDbBackups(List<File> dbFiles) {
         long size = 0;
         for (List<File> group : groupByParent(dbFiles).values()) {
             if (group.size() <= 1) continue;
@@ -522,21 +545,6 @@ public class FileCleanerPlugin extends Plugin {
             for (int i = 1; i < group.size(); i++) size += group.get(i).length();
         }
         return size;
-    }
-
-    private long cleanDbFiles() {
-        List<File> dbFiles = new ArrayList<>();
-        findByExtension(getExternalRoot(), DB_BACKUP_EXT, dbFiles, 0);
-        long freed = 0;
-        for (List<File> group : groupByParent(dbFiles).values()) {
-            if (group.size() <= 1) continue;
-            group.sort((a, b) -> Long.compare(b.lastModified(), a.lastModified()));
-            for (int i = 1; i < group.size(); i++) {
-                freed += group.get(i).length();
-                group.get(i).delete();
-            }
-        }
-        return freed;
     }
 
     private Map<File, List<File>> groupByParent(List<File> files) {
@@ -550,124 +558,6 @@ public class FileCleanerPlugin extends Plugin {
         return byParent;
     }
 
-    private long scanJunkDir() {
-        long size = scanForExtensions(getExternalRoot(), JUNK_EXT, 0);
-        size += scanOrphanedAppData();
-        return size;
-    }
-
-    // "App Cache" means cache across every installed app, not just SmartClean's own —
-    // mirrors the per-package StorageStatsManager approach already used for browser/game
-    // cache. Own app's internal cache (getCacheDir()) is added on top since that path is
-    // only readable by SmartClean itself; other apps' internal caches aren't accessible.
-    private long getAppCacheSize() {
-        long size = 0;
-        File ownCache = getContext().getCacheDir();
-        if (ownCache != null) size += getFolderSize(ownCache);
-
-        PackageManager pm = getContext().getPackageManager();
-        List<ApplicationInfo> apps;
-        try { apps = pm.getInstalledApplications(PackageManager.GET_META_DATA); }
-        catch (Exception e) { return size; }
-
-        // Deliberately NOT using StorageStatsManager here: it reports each app's total
-        // cache including its private internal storage, which no third-party app is
-        // allowed to delete (Android sandboxing since API 26). Scanning only the
-        // externally-reachable cache folder keeps this number equal to what
-        // clearOwnCache() can actually free, so it doesn't appear to "come back" after
-        // Clean Now.
-        for (ApplicationInfo app : apps) {
-            if ((app.flags & ApplicationInfo.FLAG_SYSTEM) != 0) continue;
-            File extCache = new File(Environment.getExternalStorageDirectory(), "Android/data/" + app.packageName + "/cache");
-            size += getFolderSize(extCache);
-        }
-        return size;
-    }
-
-    // Clears cache for every installed (non-system) app, plus SmartClean's own internal
-    // cache. Other apps' caches are only reachable via their external Android/data/<pkg>/cache
-    // folder (legacy storage access) — same constraint clearBrowserCacheFiles()/clearGameCache()
-    // already operate under.
-    private long clearOwnCache() {
-        long freed = getFolderSize(getContext().getCacheDir());
-        deleteRecursiveDir(getContext().getCacheDir());
-
-        PackageManager pm = getContext().getPackageManager();
-        List<ApplicationInfo> apps;
-        try { apps = pm.getInstalledApplications(PackageManager.GET_META_DATA); }
-        catch (Exception e) { return freed; }
-
-        for (ApplicationInfo app : apps) {
-            if ((app.flags & ApplicationInfo.FLAG_SYSTEM) != 0) continue;
-            File cacheDir = new File(Environment.getExternalStorageDirectory(), "Android/data/" + app.packageName + "/cache");
-            if (cacheDir.exists()) { freed += getFolderSize(cacheDir); deleteRecursiveDir(cacheDir); }
-        }
-        return freed;
-    }
-
-    // Scans only the externally-reachable cache folder (same scope clearBrowserCacheFiles()
-    // deletes) rather than StorageStatsManager's OS-reported total, which includes each
-    // browser's private internal cache that no third-party app can delete.
-    private long getBrowserCacheSize() {
-        long size = 0;
-        for (String pkg : BROWSER_PKGS) {
-            File cache = new File(Environment.getExternalStorageDirectory(), "Android/data/" + pkg + "/cache");
-            size += getFolderSize(cache);
-        }
-        return size;
-    }
-
-    private long clearBrowserCacheFiles() {
-        long freed = 0;
-        for (String pkg : BROWSER_PKGS) {
-            File cache = new File(Environment.getExternalStorageDirectory(), "Android/data/" + pkg + "/cache");
-            if (cache.exists()) { freed += getFolderSize(cache); deleteRecursiveDir(cache); }
-            File cache2 = new File(new File(getContext().getCacheDir().getParentFile().getParentFile(), pkg), "cache");
-            if (cache2.exists()) { freed += getFolderSize(cache2); deleteRecursiveDir(cache2); }
-        }
-        return freed;
-    }
-
-    private boolean isGameApp(ApplicationInfo app) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                && app.category == ApplicationInfo.CATEGORY_GAME) return true;
-        String pkg = app.packageName.toLowerCase();
-        for (String kw : GAME_KEYWORDS) { if (pkg.contains(kw)) return true; }
-        return false;
-    }
-
-    // Scans only each game's externally-reachable cache folder (same scope
-    // clearGameCache() deletes) rather than StorageStatsManager's OS-reported total,
-    // which includes private internal cache no third-party app can delete.
-    private long getGameCacheSize() {
-        PackageManager pm = getContext().getPackageManager();
-        List<ApplicationInfo> apps;
-        try { apps = pm.getInstalledApplications(PackageManager.GET_META_DATA); }
-        catch (Exception e) { return 0; }
-
-        long size = 0;
-        for (ApplicationInfo app : apps) {
-            if (!isGameApp(app)) continue;
-            File cacheDir = new File(Environment.getExternalStorageDirectory(), "Android/data/" + app.packageName + "/cache");
-            size += getFolderSize(cacheDir);
-        }
-        return size;
-    }
-
-    private long clearGameCache() {
-        long freed = 0;
-        PackageManager pm = getContext().getPackageManager();
-        List<ApplicationInfo> apps;
-        try { apps = pm.getInstalledApplications(PackageManager.GET_META_DATA); }
-        catch (Exception e) { return 0; }
-
-        for (ApplicationInfo app : apps) {
-            if (!isGameApp(app)) continue;
-            File cacheDir = new File(Environment.getExternalStorageDirectory(), "Android/data/" + app.packageName + "/cache");
-            if (cacheDir.exists()) { freed += getFolderSize(cacheDir); deleteRecursiveDir(cacheDir); }
-        }
-        return freed;
-    }
 
     private int getNotifCount() {
         NotificationService svc = NotificationService.instance;
@@ -718,95 +608,85 @@ public class FileCleanerPlugin extends Plugin {
         return freed;
     }
 
-    // ─── File traversal helpers ───────────────────────────────────────────────
+    // ─── Combined clean walk ───────────────────────────────────────────────────
 
-    interface FileFilter { boolean accept(File f); }
-
-    private long deleteRecursive(File dir, FileFilter filter) {
-        return deleteRecursive(dir, filter, 0);
+    private static class CleanTotals {
+        long freed;
+        final List<File> dbFiles = new ArrayList<>();
     }
 
-    private long deleteRecursive(File dir, FileFilter filter, int depth) {
-        if (dir == null || !dir.exists() || depth > MAX_SCAN_DEPTH) return 0;
+    // Same consolidation as scanRootCombined() but destructive: deletes tmp-ext files,
+    // whole thumbnail-cache directories and junk-ext files in ONE walk (replacing up to
+    // 8 separate full-tree delete walks), and collects db-backup files for pruneDbBackups()
+    // to grouped-prune afterward. doTmp/doJunk gate which rules actually delete anything
+    // so a partial type selection (e.g. only "junk") behaves exactly like the old
+    // per-type methods did — db-backup files are always collected regardless (just a list
+    // add) so a "msg"-only selection still finds them without its own walk.
+    // Same asymptotic-curve progress as scanRootCombined() — no pre-count pass, so
+    // there's no phase where the popup can sit frozen while a first/large folder is
+    // being sized up; the very first entry deleted already produces a visible tick.
+    private CleanTotals deleteCombinedRoot(boolean doTmp, boolean doJunk, AtomicInteger progress) {
+        CleanTotals totals = new CleanTotals();
+        File root = getExternalRoot();
+        File[] top = root.exists() ? root.listFiles() : null;
+        if (top == null || top.length == 0) return totals;
+
+        final int rootBudget = 90;
+        AtomicLong visited = new AtomicLong(0);
+        for (File t : top) {
+            totals.freed += deleteCombinedWalk(t, doTmp, doJunk, totals.dbFiles, 0, visited, progress, rootBudget);
+        }
+        bumpProgress(progress, rootBudget, "root", "cleanProgress");
+        return totals;
+    }
+
+    private long deleteCombinedWalk(File f, boolean doTmp, boolean doJunk, List<File> dbOut, int depth,
+                                     AtomicLong visited, AtomicInteger progress, int rootBudget) {
+        if (f == null || !f.exists() || depth > MAX_SCAN_DEPTH) return 0;
         long freed = 0;
-        File[] files = dir.listFiles();
-        if (files == null) return 0;
-        for (File f : files) {
-            if (f.isDirectory()) { freed += deleteRecursive(f, filter, depth + 1); }
-            else if (filter.accept(f)) { freed += f.length(); f.delete(); }
+        long v = visited.incrementAndGet();
+        bumpProgress(progress, asymptoticPercent(v, rootBudget), "root", "cleanProgress");
+        if (f.isDirectory()) {
+            if (doTmp) {
+                for (String td : THUMB_DIRS) {
+                    if (f.getName().equalsIgnoreCase(td)) {
+                        freed += getFolderSize(f);
+                        deleteRecursiveDir(f);
+                        return freed; // contents are gone, nothing left to recurse into
+                    }
+                }
+            }
+            File[] children = f.listFiles();
+            if (children == null) return freed;
+            for (File c : children) freed += deleteCombinedWalk(c, doTmp, doJunk, dbOut, depth + 1, visited, progress, rootBudget);
+        } else {
+            String name = f.getName().toLowerCase();
+            boolean deleted = false;
+            if (doTmp) {
+                for (String ext : TMP_EXT) { if (name.endsWith(ext)) { freed += f.length(); f.delete(); deleted = true; break; } }
+            }
+            if (!deleted && doJunk) {
+                for (String ext : JUNK_EXT) { if (name.endsWith(ext)) { freed += f.length(); f.delete(); deleted = true; break; } }
+            }
+            if (!deleted && name.endsWith(DB_BACKUP_EXT)) dbOut.add(f);
         }
         return freed;
     }
 
-    private long scanForExtensions(File dir, List<String> exts, int depth) {
-        if (dir == null || !dir.exists() || depth > MAX_SCAN_DEPTH) return 0;
-        long size = 0;
-        File[] files = dir.listFiles();
-        if (files == null) return 0;
-        for (File f : files) {
-            if (f.isDirectory()) size += scanForExtensions(f, exts, depth+1);
-            else {
-                String name = f.getName().toLowerCase();
-                for (String ext : exts) { if (name.endsWith(ext)) { size += f.length(); break; } }
-            }
-        }
-        return size;
-    }
-
-    private long findDirSize(File root, String dirName, int depth) {
-        if (root == null || !root.exists() || depth > MAX_SCAN_DEPTH) return 0;
-        long size = 0;
-        File[] files = root.listFiles();
-        if (files == null) return 0;
-        for (File f : files) {
-            if (f.isDirectory()) {
-                if (f.getName().equalsIgnoreCase(dirName)) size += getFolderSize(f);
-                else size += findDirSize(f, dirName, depth+1);
-            }
-        }
-        return size;
-    }
-
-    // Deletes the contents of every directory named dirName found under root
-    // (mirrors findDirSize's traversal, but deletes instead of just sizing).
-    private long deleteDirNamed(File root, String dirName, int depth) {
-        if (root == null || !root.exists() || depth > MAX_SCAN_DEPTH) return 0;
+    private long pruneDbBackups(List<File> dbFiles) {
         long freed = 0;
-        File[] files = root.listFiles();
-        if (files == null) return 0;
-        for (File f : files) {
-            if (!f.isDirectory()) continue;
-            if (f.getName().equalsIgnoreCase(dirName)) {
-                freed += getFolderSize(f);
-                deleteRecursiveDir(f);
-            } else {
-                freed += deleteDirNamed(f, dirName, depth + 1);
+        for (List<File> group : groupByParent(dbFiles).values()) {
+            if (group.size() <= 1) continue;
+            group.sort((a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+            for (int i = 1; i < group.size(); i++) {
+                freed += group.get(i).length();
+                group.get(i).delete();
             }
         }
         return freed;
     }
 
-    private void findByExtension(File dir, String ext, List<File> result, int depth) {
-        if (dir == null || !dir.exists() || depth > MAX_SCAN_DEPTH) return;
-        File[] files = dir.listFiles();
-        if (files == null) return;
-        for (File f : files) {
-            if (f.isDirectory()) findByExtension(f, ext, result, depth+1);
-            else if (f.getName().toLowerCase().endsWith(ext)) result.add(f);
-        }
-    }
-
-    private boolean matchesTmp(File f) {
-        String name = f.getName().toLowerCase();
-        for (String ext : TMP_EXT) { if (name.endsWith(ext)) return true; }
-        return false;
-    }
-
-    private boolean matchesJunk(File f) {
-        String name = f.getName().toLowerCase();
-        for (String ext : JUNK_EXT) { if (name.endsWith(ext)) return true; }
-        return false;
-    }
+    // ─── Misc file helpers ─────────────────────────────────────────────────────
 
     private boolean matchesMediaType(String name, String type) {
         name = name.toLowerCase();

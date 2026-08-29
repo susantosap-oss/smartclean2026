@@ -25,8 +25,12 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 @CapacitorPlugin(name = "MemoryBooster")
 public class MemoryBoosterPlugin extends Plugin {
@@ -376,15 +380,31 @@ public class MemoryBoosterPlugin extends Plugin {
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
+    // Was a sequential loop calling getFolderSize() (a recursive folder walk) once per
+    // installed app — with dozens/hundreds of apps that alone could take many seconds.
+    // getMemoryStats() calls this, and cleanNow() awaits captureStats() (which calls
+    // getMemoryStats()) BEFORE starting the actual clean operation, so that slowness sat
+    // in front of the clean progress popup with nothing able to report progress yet —
+    // looking like the tap hadn't registered. Parallelizing the per-app folder-size
+    // lookups (independent, read-only, disjoint paths) cuts wall time without changing
+    // the result.
     private long getCacheTotal() {
         long total = 0;
         try {
             PackageManager pm = getContext().getPackageManager();
             List<ApplicationInfo> apps = pm.getInstalledApplications(PackageManager.GET_META_DATA);
+            ExecutorService pool = Executors.newFixedThreadPool(Math.min(8, Math.max(2, apps.size())));
+            List<Future<Long>> futures = new ArrayList<>();
             for (ApplicationInfo app : apps) {
-                File extData = new File(Environment.getExternalStorageDirectory(), "Android/data/" + app.packageName + "/cache");
-                if (extData.exists()) total += getFolderSize(extData);
+                futures.add(pool.submit(() -> {
+                    File extData = new File(Environment.getExternalStorageDirectory(), "Android/data/" + app.packageName + "/cache");
+                    return extData.exists() ? getFolderSize(extData) : 0L;
+                }));
             }
+            for (Future<Long> f : futures) {
+                try { total += f.get(); } catch (Exception ignored) {}
+            }
+            pool.shutdown();
             File myCache = getContext().getCacheDir();
             if (myCache != null) total += getFolderSize(myCache);
         } catch (Exception ignored) {}
