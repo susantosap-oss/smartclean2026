@@ -17,7 +17,9 @@
   --nav-h: 64px;
   --header-h: 56px;
   --storage-h: 28px;
+  --ad-h: 56px; /* reserved ad-banner-slot height, Free tier only — see .is-pro override */
 }
+body.is-pro { --ad-h: 0px; }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
@@ -71,6 +73,64 @@ html, body {
   50% { transform: scale(1.08); }
 }
 
+/* ── Privacy Policy Gate ── */
+.privacy-screen {
+  position: fixed; inset: 0;
+  z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg);
+  padding: 20px;
+}
+.privacy-box {
+  width: 100%; max-width: 420px;
+  max-height: 92vh;
+  display: flex; flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+.privacy-header { display: flex; flex-direction: column; align-items: center; text-align: center; flex-shrink: 0; }
+.privacy-title { font-size: 18px; font-weight: 700; margin-top: 10px; }
+.privacy-sub { font-size: 12px; color: var(--text2); margin-top: 4px; }
+.privacy-body {
+  flex: 1; overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  user-select: text;
+  margin: 16px 0;
+  padding: 12px 14px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 12.5px; line-height: 1.6; color: var(--text2);
+}
+.privacy-body p { margin-bottom: 10px; }
+.privacy-body p:last-child { margin-bottom: 0; }
+.privacy-web-link {
+  display: block;
+  text-align: center;
+  font-size: 12px;
+  color: var(--blue);
+  text-decoration: none;
+  margin-bottom: 14px;
+  flex-shrink: 0;
+}
+.privacy-check {
+  display: flex; align-items: flex-start; gap: 10px;
+  font-size: 12.5px; color: var(--text);
+  flex-shrink: 0; cursor: pointer;
+}
+.privacy-check input { margin-top: 2px; accent-color: var(--green); width: 16px; height: 16px; flex-shrink: 0; }
+.privacy-actions {
+  display: flex; gap: 10px;
+  margin-top: 16px;
+  flex-shrink: 0;
+}
+.privacy-actions .btn-primary:disabled {
+  opacity: .4; cursor: not-allowed;
+}
+.privacy-actions .btn-primary:disabled:active { transform: none; }
+
 /* ── App Shell ── */
 .app { display: flex; flex-direction: column; height: 100vh; }
 .hidden { display: none !important; }
@@ -84,14 +144,56 @@ html, body {
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-.header-left { display: flex; align-items: center; gap: 8px; }
+.header-left { display: flex; align-items: baseline; gap: 6px; }
 .header-title { font-size: 18px; font-weight: 700; }
-.storage-chip {
-  font-size: 12px; color: var(--text2);
-  background: var(--bg3);
-  padding: 4px 10px; border-radius: 20px;
-  border: 1px solid var(--border);
+.header-pro-badge {
+  background: none; border: none;
+  color: var(--yellow); font-size: 12px; font-weight: 700;
+  padding: 0; cursor: pointer;
+  transition: opacity .15s;
 }
+.header-pro-badge:active { opacity: .6; }
+.header-pro-badge.hidden { display: none; }
+.header-storage { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.storage-chip {
+  font-size: 10.5px; color: var(--text2);
+  background: var(--bg3);
+  padding: 4px 8px; border-radius: 20px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.lang-toggle-btn {
+  font-size: 10.5px; font-weight: 700; color: var(--text2);
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 4px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.lang-toggle-btn:active { opacity: .6; }
+
+/* ── App language row (Advanced tab) ── */
+.lang-row {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.lang-row-label { font-size: 14px; font-weight: 600; }
+.lang-opts { display: flex; gap: 8px; }
+.lang-opt {
+  font-size: 12px; font-weight: 600; color: var(--text2);
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.lang-opt.active { background: var(--green); border-color: var(--green); color: #08130d; }
 
 /* ── Storage Bar ── */
 .storage-bar-wrap {
@@ -113,18 +215,24 @@ html, body {
   transition: width .6s ease;
 }
 .storage-pct { font-size: 11px; color: var(--text2); min-width: 32px; text-align: right; }
+.storage-info-btn {
+  background: none; border: none; padding: 0; margin-left: 2px;
+  color: var(--text3); font-size: 12px; line-height: 1; cursor: pointer;
+  vertical-align: middle;
+}
+.storage-info-btn:active { opacity: .6; }
 
 /* ── Content / Sections ── */
 .content {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-bottom: calc(var(--nav-h) + 16px);
+  padding-bottom: calc(var(--nav-h) + var(--ad-h) + 16px);
   -webkit-overflow-scrolling: touch;
 }
 .section { display: none; padding: 16px; }
 .section.active { display: block; }
-#sec-clean.active { padding-bottom: calc(var(--nav-h) + 80px); }
+#sec-clean.active { padding-bottom: calc(var(--nav-h) + var(--ad-h) + 80px); }
 
 /* ── Global Op-Progress Bar (top of screen) ── */
 .op-progress {
@@ -146,7 +254,7 @@ html, body {
 /* ── Fixed Scan Junk button ── */
 .btn-scan-fixed {
   position: fixed;
-  bottom: calc(var(--nav-h) + 10px);
+  bottom: calc(var(--nav-h) + var(--ad-h) + 10px);
   left: 16px; right: 16px;
   background: linear-gradient(135deg, var(--green2), var(--blue));
   border: none; border-radius: 50px;
@@ -467,6 +575,17 @@ html, body {
 .adv-chevron.open { transform: rotate(180deg); }
 .adv-body { padding: 0 16px 16px; border-top: 1px solid var(--border); }
 
+/* ── Advanced group section headers (Social Media Cleaner / Deep Cleaner) ── */
+.adv-group-label {
+  display: flex; align-items: center; gap: 8px;
+  margin: 20px 0 10px;
+  font-size: 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text2);
+}
+.adv-group-label:first-child { margin-top: 4px; }
+.adv-group-icon { font-size: 14px; }
+
 /* WA Tabs */
 .wa-tabs {
   display: flex; gap: 8px;
@@ -529,6 +648,12 @@ html, body {
 .fi-thumb-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .25s; }
 .fi-thumb-img.loaded { opacity: 1; }
 .fi-play-badge {
+  position: absolute; right: 4px; bottom: 4px; z-index: 1;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: rgba(0,0,0,.6); color: #fff; font-size: 8px;
+  display: flex; align-items: center; justify-content: center;
+}
+.fi-preview-badge {
   position: absolute; right: 4px; bottom: 4px; z-index: 1;
   width: 16px; height: 16px; border-radius: 50%;
   background: rgba(0,0,0,.6); color: #fff; font-size: 8px;
@@ -613,6 +738,12 @@ html, body {
   border-bottom: 1px solid var(--border);
   display: flex; justify-content: space-between;
 }
+.dup-group.dup-locked {
+  border: 1px dashed var(--border);
+  cursor: pointer;
+  opacity: .85;
+}
+.dup-group.dup-locked .dup-group-header { border-bottom: none; color: var(--yellow); font-weight: 600; }
 .dup-file-item {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 12px;
@@ -643,19 +774,41 @@ html, body {
 .nav-icon { font-size: 20px; line-height: 1; }
 .nav-label { font-size: 10px; font-weight: 500; }
 
+/* ── Ad banner slot (Free tier) — layout placeholder, no ad SDK wired up yet.
+   Sits BELOW the bottom nav (never overlapping it) as its own flex row, so every
+   other fixed-position element (toast, scan button, result panel) that reserves
+   space via --nav-h automatically gets pushed up too through --ad-h. ── */
+.ad-banner-slot {
+  height: var(--ad-h);
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg2);
+  border-top: 1px dashed var(--border);
+  color: var(--text3);
+  font-size: 11px;
+  overflow: hidden;
+}
+body.is-pro .ad-banner-slot { display: none; }
+
 /* ── Toast ── */
+/* Solid (not translucent) background on purpose — the toast sits directly over the
+   fixed Scan Junk button (e.g. the "tekan sekali lagi untuk keluar" double-back-to-exit
+   message), and a see-through background let the button's own bright gradient bleed
+   through and make the toast text unreadable. Covering it fully is the intended fix,
+   not a repositioning — the overlap itself is fine, only the illegibility wasn't. */
 .toast {
-  position: fixed; bottom: calc(var(--nav-h) + 16px);
+  position: fixed; bottom: calc(var(--nav-h) + var(--ad-h) + 16px);
   left: 50%; transform: translateX(-50%);
-  background: rgba(0,230,118,.15);
+  background: var(--bg2);
   border: 1px solid var(--green);
   color: var(--green);
   padding: 10px 20px; border-radius: 25px;
   font-size: 13px; font-weight: 500;
   z-index: 100; white-space: nowrap;
   opacity: 1; transition: opacity .3s;
+  box-shadow: 0 4px 18px rgba(0,0,0,.55);
 }
-.toast.error { background: rgba(255,82,82,.15); border-color: var(--red); color: var(--red); }
+.toast.error { background: var(--bg2); border-color: var(--red); color: var(--red); }
 .toast.hiding { opacity: 0; }
 
 /* ── Modal ── */
@@ -674,8 +827,82 @@ html, body {
   width: 100%; max-width: 340px;
 }
 .modal-title { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
-.modal-body { font-size: 13px; color: var(--text2); margin-bottom: 20px; }
+.modal-body { font-size: 13px; color: var(--text2); margin-bottom: 20px; white-space: pre-line; }
 .modal-actions { display: flex; gap: 10px; }
+
+/* ── Full-size media preview (tap a file-list thumbnail) ── */
+.preview-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.92);
+  z-index: 300;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.preview-stage {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  max-width: 100%; max-height: 100%;
+}
+.preview-media {
+  max-width: 100%; max-height: 78vh;
+  border-radius: 12px;
+  object-fit: contain;
+  background: #000;
+}
+.preview-caption {
+  color: #fff; font-size: 13px; text-align: center;
+  max-width: 90vw; word-break: break-word;
+}
+
+/* ── Pro / Upgrade ── */
+.pro-lock {
+  display: inline-block;
+  font-size: 10px; font-weight: 700;
+  color: var(--yellow);
+  vertical-align: middle;
+}
+.is-pro .pro-lock { display: none; }
+
+.upgrade-box {
+  max-width: 360px;
+  text-align: center;
+  position: relative;
+  max-height: 90vh; overflow-y: auto;
+}
+.upgrade-close {
+  position: absolute; top: 12px; right: 12px;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text2); font-size: 13px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.upgrade-crown { font-size: 34px; margin-bottom: 4px; }
+.upgrade-box .modal-title { font-size: 20px; }
+.upgrade-reason { font-size: 12.5px; color: var(--text2); margin-bottom: 16px; }
+.upgrade-benefits {
+  list-style: none;
+  display: flex; flex-direction: column; gap: 9px;
+  text-align: left;
+  font-size: 12.5px;
+  margin-bottom: 18px;
+  padding: 14px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.upgrade-price {
+  font-size: 22px; font-weight: 800;
+  background: linear-gradient(135deg, var(--green), var(--blue));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  margin-bottom: 12px;
+}
+.upgrade-buy { width: 100%; padding: 14px; font-size: 15px; }
+.upgrade-buy:disabled { opacity: .5; cursor: not-allowed; }
+.upgrade-restore {
+  background: none; border: none;
+  color: var(--text2); font-size: 12px;
+  text-decoration: underline;
+  margin-top: 12px; cursor: pointer;
+}
 
 /* ── Clean Progress Popup ── */
 .clean-progress-box {
@@ -721,7 +948,7 @@ svg defs { position: absolute; }
 ══════════════════════════════════════ */
 .result-panel {
   position: fixed;
-  bottom: calc(var(--nav-h) + 10px);
+  bottom: calc(var(--nav-h) + var(--ad-h) + 10px);
   left: 10px; right: 10px;
   background: var(--bg2);
   border: 1.5px solid var(--green);
@@ -824,6 +1051,18 @@ svg defs { position: absolute; }
   line-height: 1;
 }
 .rp-freed-sub { font-size: 12px; color: var(--text2); margin-top: 4px; }
+
+.rp-locked {
+  margin-top: 10px;
+  padding: 12px;
+  background: var(--bg2);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text2);
+  cursor: pointer;
+}
 
 /* Detail rows */
 .rp-details { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }

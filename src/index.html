@@ -29,8 +29,40 @@
     </svg>
   </div>
   <div class="splash-title">SmartClean</div>
-  <div class="splash-sub">Phone Cleaner & Optimizer</div>
+  <div class="splash-sub" data-i18n="splashSub">Phone Cleaner & Optimizer</div>
   <div class="splash-loader"><div class="splash-bar"></div></div>
+</div>
+
+<!-- ─── PRIVACY POLICY (shown on first launch, must agree to continue) ─── -->
+<div id="privacyScreen" class="privacy-screen hidden">
+  <div class="privacy-box">
+    <div class="privacy-header">
+      <svg width="36" height="36" viewBox="0 0 80 80" fill="none">
+        <circle cx="40" cy="40" r="38" stroke="url(#pg)" stroke-width="3"/>
+        <path d="M26 52 C26 52 30 32 40 30 C50 28 54 38 50 46 C46 54 36 56 32 48"
+              stroke="url(#pg)" stroke-width="3" stroke-linecap="round" fill="none"/>
+        <circle cx="40" cy="38" r="6" fill="url(#pg)"/>
+        <defs>
+          <linearGradient id="pg" x1="0" y1="0" x2="80" y2="80">
+            <stop offset="0%" stop-color="#00e676"/>
+            <stop offset="100%" stop-color="#00b0ff"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <div class="privacy-title" data-i18n="privacyTitle">Kebijakan Privasi</div>
+      <div class="privacy-sub" data-i18n="privacySub">Mohon baca &amp; setujui sebelum melanjutkan</div>
+    </div>
+    <div class="privacy-body" id="privacyBody">Memuat kebijakan privasi…</div>
+    <a class="privacy-web-link" data-i18n="privacyWebLink" href="https://susantosap-oss.github.io/policy_privacy/" target="_blank" rel="noopener">🔗 Baca versi lengkap di web</a>
+    <label class="privacy-check">
+      <input type="checkbox" id="privacyCheck">
+      <span data-i18n="privacyCheckLabel">Saya sudah membaca dan menyetujui Kebijakan Privasi di atas</span>
+    </label>
+    <div class="privacy-actions">
+      <button class="btn-secondary" id="btnPrivacyDecline" data-i18n="privacyDecline">Tolak &amp; Keluar</button>
+      <button class="btn-primary" id="btnPrivacyAccept" data-i18n="privacyAccept" disabled>Setuju &amp; Lanjutkan</button>
+    </div>
+  </div>
 </div>
 
 <!-- ─── MAIN APP ─── -->
@@ -52,11 +84,13 @@
         </defs>
       </svg>
       <span class="header-title">SmartClean</span>
+      <button class="header-pro-badge" id="btnUpgradeEntry" onclick="openUpgradeModal()">(PRO)</button>
     </div>
     <div class="header-storage">
       <span class="storage-chip">
         <span id="storageUsed">—</span> / <span id="storageTotal">—</span>
       </span>
+      <button class="lang-toggle-btn" id="btnLangToggle" onclick="toggleLang()">EN</button>
     </div>
   </header>
 
@@ -66,6 +100,7 @@
       <div id="storageBar" class="storage-bar-fill" style="width:0%"></div>
     </div>
     <span id="storagePercent" class="storage-pct">0%</span>
+    <button class="storage-info-btn" onclick="showStorageMismatchInfo()">ⓘ</button>
   </div>
 
   <!-- Content -->
@@ -82,20 +117,20 @@
           </svg>
           <div class="ring-inner">
             <div class="ring-value" id="cleanSize">0 MB</div>
-            <div class="ring-label" id="cleanLabel">Junk Found</div>
+            <div class="ring-label" id="cleanLabel" data-i18n="cleanLabelDefault">Junk Found</div>
           </div>
         </div>
         <div class="scan-info-text">
           <span class="sit-icon">ℹ️</span>
-          <span>Kecepatan proses scan tergantung kepada kapasitas Internal Storage dan banyaknya file junk yang di-scan.</span>
+          <span data-i18n="scanInfoText">Kecepatan proses scan tergantung kepada kapasitas Internal Storage dan banyaknya file junk yang di-scan.</span>
         </div>
       </div>
 
       <div class="card-list" id="cleanList"></div>
 
       <div class="action-row" id="cleanActions" style="display:none">
-        <button class="btn-secondary" id="btnSelectAllClean">Select All</button>
-        <button class="btn-primary" id="btnCleanNow">🧹 Clean Now</button>
+        <button class="btn-secondary" id="btnSelectAllClean" data-i18n="selectAll">Select All</button>
+        <button class="btn-primary" id="btnCleanNow" data-i18n="btnCleanNowDefault">🧹 Clean Now</button>
       </div>
     </section>
 
@@ -105,68 +140,49 @@
         <div class="stat-card">
           <div class="stat-icon">💾</div>
           <div class="stat-body">
-            <div class="stat-label">Internal Storage</div>
+            <div class="stat-label"><span data-i18n="internalStorageLabel">Internal Storage</span> <button class="storage-info-btn" onclick="showStorageMismatchInfo()">ⓘ</button></div>
             <div class="stat-bar-wrap">
               <div class="stat-bar-track">
                 <div class="stat-bar-fill" id="internalBar" style="width:0%"></div>
               </div>
             </div>
-            <div class="stat-info" id="internalInfo">Scanning…</div>
+            <div class="stat-info" id="internalInfo" data-i18n="cleanLabelScanning">Scanning…</div>
           </div>
         </div>
         <div class="stat-card">
           <div class="stat-icon">📀</div>
           <div class="stat-body">
-            <div class="stat-label">SD Card</div>
+            <div class="stat-label" data-i18n="sdCardLabel">SD Card</div>
             <div class="stat-bar-wrap">
               <div class="stat-bar-track">
                 <div class="stat-bar-fill" id="sdBar" style="width:0%"></div>
               </div>
             </div>
-            <div class="stat-info" id="sdInfo">Not detected</div>
+            <div class="stat-info" id="sdInfo" data-i18n="sdCardNotDetected">Not detected</div>
           </div>
         </div>
         <div class="stat-card">
           <div class="stat-icon">🧠</div>
           <div class="stat-body">
-            <div class="stat-label">RAM Memory</div>
+            <div class="stat-label" data-i18n="ramMemoryLabel">RAM Memory</div>
             <div class="stat-bar-wrap">
               <div class="stat-bar-track">
                 <div class="stat-bar-fill yellow" id="ramBar" style="width:0%"></div>
               </div>
             </div>
-            <div class="stat-info" id="ramInfo">Scanning…</div>
+            <div class="stat-info" id="ramInfo" data-i18n="cleanLabelScanning">Scanning…</div>
           </div>
         </div>
       </div>
-
-      <!-- Recently Deleted -->
-      <div class="trash-card" id="trashCard">
-        <div class="trash-header">
-          <span class="trash-ico">🗑️</span>
-          <div class="trash-body">
-            <div class="trash-title">Recently Deleted</div>
-            <div class="trash-sub" id="trashSub">Foto, video &amp; file di sampah sistem</div>
-          </div>
-          <div class="trash-size" id="trashSize">—</div>
-        </div>
-        <div class="trash-btns" id="trashBtns" style="display:none">
-          <button class="btn-trash-clean" id="btnCleanTrash">🧹 Hapus Permanen</button>
-        </div>
-      </div>
-      <button class="btn-defrag secondary" id="btnScanTrash" style="margin-top:0">
-        <span class="btn-defrag-icon">🔍</span>
-        <span>Scan Recently Deleted</span>
-      </button>
 
       <div class="defrag-actions">
         <button class="btn-defrag" id="btnDefrag">
           <span class="btn-defrag-icon">⚡</span>
-          <span>Defrag & Optimize Storage</span>
+          <span data-i18n="btnDefragDefault">Defrag & Optimize Storage</span>
         </button>
         <button class="btn-defrag boost" id="btnBoost">
           <span class="btn-defrag-icon">🚀</span>
-          <span>Boost Memory (RAM)</span>
+          <span data-i18n="btnBoostDefault">Boost Memory (RAM)</span>
         </button>
       </div>
 
@@ -183,30 +199,46 @@
           <div class="battery-cap"></div>
           <div class="battery-pct" id="batteryPct">—%</div>
         </div>
-        <div class="battery-status" id="batteryStatus">Checking…</div>
+        <div class="battery-status" id="batteryStatus" data-i18n="batteryChecking">Checking…</div>
       </div>
 
-      <div class="sub-title">Background Apps</div>
+      <div class="sub-title" data-i18n="subtitleBgApps">Background Apps</div>
       <div id="bgAppList" class="app-list">
-        <div class="empty-state">Tap scan to find background apps</div>
+        <div class="empty-state" data-i18n="emptyBgAppsHint">Tap scan to find background apps</div>
       </div>
 
       <div class="action-row">
-        <button class="btn-secondary" id="btnScanBattery">🔍 Scan Apps</button>
-        <button class="btn-primary" id="btnKillApps">⚡ Kill All</button>
+        <button class="btn-secondary" id="btnScanBattery" data-i18n="btnScanAppsDefault">🔍 Scan Apps</button>
+        <button class="btn-primary" id="btnKillApps" data-i18n="btnKillAllDefault">⚡ Kill All</button>
       </div>
 
-      <div class="sub-title" style="margin-top:16px">Internal Memory</div>
+      <div class="sub-title" style="margin-top:16px" data-i18n="subtitleInternalMemory">Internal Memory</div>
       <div class="mem-info-card" id="memInfoCard">
-        <div class="mem-row"><span>Total RAM</span><span id="memTotal">—</span></div>
-        <div class="mem-row"><span>Used RAM</span><span id="memUsed">—</span></div>
-        <div class="mem-row"><span>Free RAM</span><span id="memFree">—</span></div>
-        <div class="mem-row"><span>App Cache Total</span><span id="cacheTotal">—</span></div>
+        <div class="mem-row"><span data-i18n="labelTotalRam">Total RAM</span><span id="memTotal">—</span></div>
+        <div class="mem-row"><span data-i18n="labelUsedRam">Used RAM</span><span id="memUsed">—</span></div>
+        <div class="mem-row"><span data-i18n="labelFreeRam">Free RAM</span><span id="memFree">—</span></div>
+        <div class="mem-row"><span data-i18n="labelAppCacheTotal">App Cache Total</span><span id="cacheTotal">—</span></div>
       </div>
     </section>
 
     <!-- ══════════ ADVANCED ══════════ -->
     <section id="sec-advanced" class="section">
+
+      <!-- App language — app-level setting, not a cleaning feature, so it lives on its
+           own rather than inside any feature card or Pro-gated group. -->
+      <div class="lang-row" id="langRow">
+        <span class="lang-row-label" data-i18n="appLanguageLabel">Bahasa Aplikasi</span>
+        <div class="lang-opts">
+          <button class="lang-opt" id="langOptId" onclick="setLang('id')">Indonesia</button>
+          <button class="lang-opt" id="langOptEn" onclick="setLang('en')">English</button>
+        </div>
+      </div>
+
+      <!-- ═══ Group: Social Media Cleaner ═══ -->
+      <div class="adv-group-label">
+        <span class="adv-group-icon">💬</span>
+        <span data-i18n="groupSocialMedia">Social Media Cleaner</span>
+      </div>
 
       <!-- WhatsApp -->
       <div class="adv-card" id="advWA">
@@ -218,85 +250,122 @@
             </svg>
           </div>
           <div class="adv-title-wrap">
-            <div class="adv-title">WhatsApp Cleaner</div>
-            <div class="adv-sub" id="waSub">WhatsApp &amp; WhatsApp Business</div>
+            <div class="adv-title" data-i18n="advTitleWA">WhatsApp Cleaner</div>
+            <div class="adv-sub" id="waSub" data-i18n="advSubWA">WhatsApp &amp; WhatsApp Business</div>
           </div>
           <div class="adv-chevron" id="chevWa">▼</div>
         </div>
         <div class="adv-body hidden" id="waBody">
           <div class="wa-tabs">
-            <button class="wa-tab active" data-type="video">Video</button>
-            <button class="wa-tab" data-type="image">Foto</button>
-            <button class="wa-tab" data-type="document">Dokumen</button>
-            <button class="wa-tab" data-type="audio">Audio</button>
+            <button class="wa-tab active" data-type="video"><span data-i18n="tabVideo">Video</span></button>
+            <button class="wa-tab" data-type="image"><span data-i18n="tabPhoto">Foto</span></button>
+            <button class="wa-tab" data-type="document"><span data-i18n="tabDocument">Dokumen</span> <span class="pro-lock" data-i18n="proLockPlain">🔒</span></button>
+            <button class="wa-tab" data-type="audio"><span data-i18n="tabAudio">Audio</span> <span class="pro-lock" data-i18n="proLockPlain">🔒</span></button>
           </div>
           <div class="wa-filter">
-            <span class="filter-label">Sisakan</span>
+            <span class="filter-label" data-i18n="filterKeep">Sisakan</span>
             <select id="waMonths" class="filter-sel">
-              <option value="3">3 Bulan Terakhir</option>
-              <option value="6">6 Bulan Terakhir</option>
-              <option value="1">1 Bulan Terakhir</option>
+              <option value="3" data-i18n="filter3Months">3 Bulan Terakhir</option>
+              <option value="6" data-i18n="filter6Months">6 Bulan Terakhir</option>
+              <option value="1" data-i18n="filter1MonthPro">1 Bulan Terakhir (🔒 Pro)</option>
             </select>
           </div>
-          <button class="btn-scan-adv" id="btnScanWA">🔍 Scan WhatsApp</button>
+          <button class="btn-scan-adv" id="btnScanWA" data-i18n="btnScanWADefault">🔍 Scan WhatsApp</button>
           <div id="waFileList" class="file-list"></div>
           <div class="action-row" id="waActions" style="display:none">
-            <button class="btn-secondary" id="btnSelectAllWA">Select All</button>
-            <button class="btn-primary" id="btnDeleteWA">🗑 Delete Selected</button>
+            <button class="btn-secondary" id="btnSelectAllWA" data-i18n="selectAll">Select All</button>
+            <button class="btn-primary" id="btnDeleteWA" data-i18n="deleteSelected">🗑 Delete Selected</button>
           </div>
         </div>
       </div>
 
-      <!-- Browser Cleaner (shortcut to OS-level cache cleaner) -->
-      <div class="adv-card" id="advBrowser">
-        <div class="adv-header" onclick="toggleAdv('browser')">
-          <div class="adv-icon">🌐</div>
+      <!-- Telegram Cleaner (media + cache — entire card is Pro-only) -->
+      <div class="adv-card" id="advTelegram">
+        <div class="adv-header" onclick="toggleAdv('telegram')">
+          <div class="adv-icon">✈️</div>
           <div class="adv-title-wrap">
-            <div class="adv-title">Browser Cleaner</div>
-            <div class="adv-sub">Chrome, Firefox, Samsung Internet, dll</div>
+            <div class="adv-title"><span data-i18n="advTitleTelegram">Telegram Cleaner</span> <span class="pro-lock" data-i18n="proLockPro">🔒 PRO</span></div>
+            <div class="adv-sub" id="tgSub" data-i18n="advSubTelegram">Media &amp; cache Telegram</div>
           </div>
-          <div class="adv-chevron" id="chevBrowser">▼</div>
+          <div class="adv-chevron" id="chevTelegram">▼</div>
         </div>
-        <div class="adv-body hidden" id="browserBody">
-          <p class="ads-desc">
-            Android tidak mengizinkan app pihak ketiga (termasuk SmartClean) membaca atau
-            menghapus cache browser lain secara langsung. Satu-satunya cara resmi & aman
-            untuk membersihkan cache browser adalah lewat cleaner bawaan sistem HP kamu.
-          </p>
-          <button class="btn-scan-adv" id="btnOpenBrowserSettings">🧹 Buka Cleaner Bawaan Sistem</button>
-        </div>
-      </div>
-
-      <!-- Camera/Gallery Cleaner -->
-      <div class="adv-card" id="advCamera">
-        <div class="adv-header" onclick="toggleAdv('camera')">
-          <div class="adv-icon">📷</div>
-          <div class="adv-title-wrap">
-            <div class="adv-title">Camera & Gallery Cleaner</div>
-            <div class="adv-sub" id="camSub">Foto & Video lama</div>
-          </div>
-          <div class="adv-chevron" id="chevCamera">▼</div>
-        </div>
-        <div class="adv-body hidden" id="cameraBody">
+        <div class="adv-body hidden" id="telegramBody">
           <div class="wa-tabs">
-            <button class="wa-tab active" data-type="video">Video</button>
-            <button class="wa-tab" data-type="image">Foto</button>
-            <button class="wa-tab" data-type="screenshot">Screenshot</button>
+            <button class="wa-tab active" data-type="video"><span data-i18n="tabVideo">Video</span></button>
+            <button class="wa-tab" data-type="image"><span data-i18n="tabPhoto">Foto</span></button>
+            <button class="wa-tab" data-type="document"><span data-i18n="tabDocument">Dokumen</span></button>
+            <button class="wa-tab" data-type="audio"><span data-i18n="tabAudio">Audio</span></button>
           </div>
           <div class="wa-filter">
-            <span class="filter-label">Sisakan</span>
-            <select id="camMonths" class="filter-sel">
-              <option value="3">3 Bulan Terakhir</option>
-              <option value="6">6 Bulan Terakhir</option>
-              <option value="1">1 Bulan Terakhir</option>
+            <span class="filter-label" data-i18n="filterKeep">Sisakan</span>
+            <select id="tgMonths" class="filter-sel">
+              <option value="3" data-i18n="filter3Months">3 Bulan Terakhir</option>
+              <option value="6" data-i18n="filter6Months">6 Bulan Terakhir</option>
+              <option value="1" data-i18n="filter1Month">1 Bulan Terakhir</option>
             </select>
           </div>
-          <button class="btn-scan-adv" id="btnScanCam">🔍 Scan Camera Roll</button>
-          <div id="camFileList" class="file-list"></div>
-          <div class="action-row" id="camActions" style="display:none">
-            <button class="btn-secondary" id="btnSelectAllCam">Select All</button>
-            <button class="btn-primary" id="btnDeleteCam">🗑 Delete Selected</button>
+          <button class="btn-scan-adv" id="btnScanTg" data-i18n="btnScanTgDefault">🔍 Scan Telegram</button>
+          <div id="tgFileList" class="file-list"></div>
+          <div class="action-row" id="tgActions" style="display:none">
+            <button class="btn-secondary" id="btnSelectAllTg" data-i18n="selectAll">Select All</button>
+            <button class="btn-primary" id="btnDeleteTg" data-i18n="deleteSelected">🗑 Delete Selected</button>
           </div>
+        </div>
+      </div>
+
+      <!-- ═══ Group: Deep Cleaner ═══ -->
+      <div class="adv-group-label">
+        <span class="adv-group-icon">🧹</span>
+        <span data-i18n="groupDeepCleaner">Deep Cleaner</span>
+      </div>
+
+      <!-- Download Folder Cleanup (>90 hari, free scan / paid delete) -->
+      <div class="adv-card" id="advDownload">
+        <div class="adv-header" onclick="toggleAdv('download')">
+          <div class="adv-icon">📥</div>
+          <div class="adv-title-wrap">
+            <div class="adv-title" data-i18n="advTitleDownload">Download Folder Cleanup</div>
+            <div class="adv-sub" id="downloadSub" data-i18n="advSubDownload">File &gt; 90 hari</div>
+          </div>
+          <div class="adv-chevron" id="chevDownload">▼</div>
+        </div>
+        <div class="adv-body hidden" id="downloadBody">
+          <p class="ads-desc" data-i18n="downloadDesc">Scan file di folder Download yang berumur lebih dari 90 hari.</p>
+          <button class="btn-scan-adv" id="btnScanDownload" data-i18n="btnScanDownloadDefault">🔍 Scan Download</button>
+          <div id="downloadFileList" class="file-list"></div>
+          <div class="action-row" id="downloadActions" style="display:none">
+            <button class="btn-secondary" id="btnSelectAllDownload" data-i18n="selectAll">Select All</button>
+            <button class="btn-primary" id="btnDeleteDownload"><span data-i18n="deleteSelected">🗑 Delete Selected</span> <span class="pro-lock" data-i18n="proLock1PerDay">🔒 1 file/hari</span></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recently Deleted -->
+      <div class="adv-card" id="advTrash">
+        <div class="adv-header" onclick="toggleAdv('trash')">
+          <div class="adv-icon">🗑️</div>
+          <div class="adv-title-wrap">
+            <div class="adv-title" data-i18n="advTitleTrash">Recently Deleted</div>
+            <div class="adv-sub" id="trashSub" data-i18n="advSubTrash">Foto, video &amp; file di sampah sistem</div>
+          </div>
+          <div class="adv-chevron" id="chevTrash">▼</div>
+        </div>
+        <div class="adv-body hidden" id="trashBody">
+          <div class="trash-card" id="trashCard">
+            <div class="trash-header">
+              <span class="trash-ico">🗑️</span>
+              <div class="trash-body">
+                <div class="trash-title" data-i18n="systemTrash">Sampah Sistem</div>
+              </div>
+              <div class="trash-size" id="trashSize">—</div>
+            </div>
+            <div class="trash-btns" id="trashBtns" style="display:none">
+              <button class="btn-trash-clean" id="btnCleanTrash"><span data-i18n="btnCleanTrashDefault">🧹 Hapus Permanen</span> <span class="pro-lock" data-i18n="proLockPro">🔒 PRO</span></button>
+            </div>
+          </div>
+          <button class="btn-scan-adv" id="btnScanTrash">
+            <span>🔍</span> <span data-i18n="btnScanTrashDefault">Scan Recently Deleted</span>
+          </button>
         </div>
       </div>
 
@@ -305,32 +374,145 @@
         <div class="adv-header" onclick="toggleAdv('dup')">
           <div class="adv-icon">🔄</div>
           <div class="adv-title-wrap">
-            <div class="adv-title">Duplicate Finder</div>
-            <div class="adv-sub" id="dupSub">Temukan & hapus duplikat</div>
+            <div class="adv-title" data-i18n="advTitleDup">Duplicate Finder</div>
+            <div class="adv-sub" id="dupSub" data-i18n="advSubDup">Temukan & hapus duplikat</div>
           </div>
           <div class="adv-chevron" id="chevDup">▼</div>
         </div>
         <div class="adv-body hidden" id="dupBody">
           <div class="dup-scope">
             <label class="dup-opt">
-              <input type="radio" name="dupScope" value="all" checked> Semua Storage
+              <input type="radio" name="dupScope" value="all" checked> <span data-i18n="dupScopeAll">Semua Storage</span> <span class="pro-lock" data-i18n="proLockPlain">🔒</span>
             </label>
             <label class="dup-opt">
-              <input type="radio" name="dupScope" value="photos"> Hanya Foto
+              <input type="radio" name="dupScope" value="photos"> <span data-i18n="dupScopePhotos">Hanya Foto</span>
             </label>
             <label class="dup-opt">
-              <input type="radio" name="dupScope" value="videos"> Hanya Video
+              <input type="radio" name="dupScope" value="videos"> <span data-i18n="dupScopeVideos">Hanya Video</span> <span class="pro-lock" data-i18n="proLockPlain">🔒</span>
             </label>
           </div>
-          <button class="btn-scan-adv" id="btnScanDup">🔍 Scan Duplicates</button>
+          <button class="btn-scan-adv" id="btnScanDup" data-i18n="btnScanDupDefault">🔍 Scan Duplicates</button>
           <div id="dupProgress" class="dup-progress hidden">
             <div class="dup-bar-track"><div class="dup-bar-fill" id="dupBarFill"></div></div>
-            <div class="dup-bar-label" id="dupBarLabel">Scanning…</div>
+            <div class="dup-bar-label" id="dupBarLabel" data-i18n="cleanLabelScanning">Scanning…</div>
           </div>
           <div id="dupList" class="dup-list"></div>
           <div class="action-row" id="dupActions" style="display:none">
-            <button class="btn-secondary" id="btnAutoSelectDup">Auto Select</button>
-            <button class="btn-primary" id="btnDeleteDup">🗑 Delete Duplicates</button>
+            <button class="btn-secondary" id="btnAutoSelectDup" data-i18n="btnAutoSelectDefault">Auto Select</button>
+            <button class="btn-primary" id="btnDeleteDup" data-i18n="btnDeleteDuplicatesDefault">🗑 Delete Duplicates</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Big File Cleaner (> 100MB, full access) -->
+      <div class="adv-card" id="advBigFile">
+        <div class="adv-header" onclick="toggleAdv('bigFile')">
+          <div class="adv-icon">📦</div>
+          <div class="adv-title-wrap">
+            <div class="adv-title" data-i18n="advTitleBigFile">Big File Cleaner</div>
+            <div class="adv-sub" id="bigFileSub" data-i18n="advSubBigFile">File &gt; 100MB</div>
+          </div>
+          <div class="adv-chevron" id="chevBigFile">▼</div>
+        </div>
+        <div class="adv-body hidden" id="bigFileBody">
+          <button class="btn-scan-adv" id="btnScanBigFile" data-i18n="btnScanBigFileDefault">🔍 Scan File Besar</button>
+          <div id="bigFileList" class="file-list"></div>
+          <div class="action-row" id="bigFileActions" style="display:none">
+            <button class="btn-secondary" id="btnSelectAllBigFile" data-i18n="selectAll">Select All</button>
+            <button class="btn-primary" id="btnDeleteBigFile"><span data-i18n="deleteSelected">🗑 Delete Selected</span> <span class="pro-lock" data-i18n="proLock1PerDay">🔒 1 file/hari</span></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- APK Installer Cleaner (free scan / paid delete) -->
+      <div class="adv-card" id="advApk">
+        <div class="adv-header" onclick="toggleAdv('apk')">
+          <div class="adv-icon">📲</div>
+          <div class="adv-title-wrap">
+            <div class="adv-title" data-i18n="advTitleApk">APK Installer Cleaner</div>
+            <div class="adv-sub" id="apkSub" data-i18n="advSubApk">File installer (.apk)</div>
+          </div>
+          <div class="adv-chevron" id="chevApk">▼</div>
+        </div>
+        <div class="adv-body hidden" id="apkBody">
+          <button class="btn-scan-adv" id="btnScanApk" data-i18n="btnScanApkDefault">🔍 Scan File APK</button>
+          <div id="apkFileList" class="file-list"></div>
+          <div class="action-row" id="apkActions" style="display:none">
+            <button class="btn-secondary" id="btnSelectAllApk" data-i18n="selectAll">Select All</button>
+            <button class="btn-primary" id="btnDeleteApk"><span data-i18n="deleteSelected">🗑 Delete Selected</span> <span class="pro-lock" data-i18n="proLockPro">🔒 PRO</span></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Empty Folder Cleanup (full access) -->
+      <div class="adv-card" id="advEmptyFolder">
+        <div class="adv-header" onclick="toggleAdv('emptyFolder')">
+          <div class="adv-icon">📁</div>
+          <div class="adv-title-wrap">
+            <div class="adv-title" data-i18n="advTitleEmptyFolder">Empty Folder Cleanup</div>
+            <div class="adv-sub" id="emptyFolderSub" data-i18n="advSubEmptyFolder">Folder kosong</div>
+          </div>
+          <div class="adv-chevron" id="chevEmptyFolder">▼</div>
+        </div>
+        <div class="adv-body hidden" id="emptyFolderBody">
+          <button class="btn-scan-adv" id="btnScanEmptyFolder" data-i18n="btnScanEmptyFolderDefault">🔍 Scan Folder Kosong</button>
+          <div id="emptyFolderList" class="file-list"></div>
+          <div class="action-row" id="emptyFolderActions" style="display:none">
+            <button class="btn-secondary" id="btnSelectAllEmptyFolder" data-i18n="selectAll">Select All</button>
+            <button class="btn-primary" id="btnDeleteEmptyFolder" data-i18n="deleteSelected">🗑 Delete Selected</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screen Recording Cleanup (free scan / paid delete) -->
+      <div class="adv-card" id="advScreenRec">
+        <div class="adv-header" onclick="toggleAdv('screenRec')">
+          <div class="adv-icon">🎥</div>
+          <div class="adv-title-wrap">
+            <div class="adv-title" data-i18n="advTitleScreenRec">Screen Recording Cleanup</div>
+            <div class="adv-sub" id="screenRecSub" data-i18n="advSubScreenRec">Rekaman layar</div>
+          </div>
+          <div class="adv-chevron" id="chevScreenRec">▼</div>
+        </div>
+        <div class="adv-body hidden" id="screenRecBody">
+          <button class="btn-scan-adv" id="btnScanScreenRec" data-i18n="btnScanScreenRecDefault">🔍 Scan Screen Recording</button>
+          <div id="screenRecFileList" class="file-list"></div>
+          <div class="action-row" id="screenRecActions" style="display:none">
+            <button class="btn-secondary" id="btnSelectAllScreenRec" data-i18n="selectAll">Select All</button>
+            <button class="btn-primary" id="btnDeleteScreenRec"><span data-i18n="deleteSelected">🗑 Delete Selected</span> <span class="pro-lock" data-i18n="proLockPro">🔒 PRO</span></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Camera/Gallery Cleaner -->
+      <div class="adv-card" id="advCamera">
+        <div class="adv-header" onclick="toggleAdv('camera')">
+          <div class="adv-icon">📷</div>
+          <div class="adv-title-wrap">
+            <div class="adv-title"><span data-i18n="advTitleCamera">Camera & Gallery Cleaner</span> <span class="pro-lock" data-i18n="proLockPro">🔒 PRO</span></div>
+            <div class="adv-sub" id="camSub" data-i18n="advSubCamera">Foto & Video lama</div>
+          </div>
+          <div class="adv-chevron" id="chevCamera">▼</div>
+        </div>
+        <div class="adv-body hidden" id="cameraBody">
+          <div class="wa-tabs">
+            <button class="wa-tab active" data-type="video"><span data-i18n="tabVideo">Video</span></button>
+            <button class="wa-tab" data-type="image"><span data-i18n="tabPhoto">Foto</span></button>
+            <button class="wa-tab" data-type="screenshot"><span data-i18n="tabScreenshot">Screenshot</span></button>
+          </div>
+          <div class="wa-filter">
+            <span class="filter-label" data-i18n="filterKeep">Sisakan</span>
+            <select id="camMonths" class="filter-sel">
+              <option value="3" data-i18n="filter3Months">3 Bulan Terakhir</option>
+              <option value="6" data-i18n="filter6Months">6 Bulan Terakhir</option>
+              <option value="1" data-i18n="filter1Month">1 Bulan Terakhir</option>
+            </select>
+          </div>
+          <button class="btn-scan-adv" id="btnScanCam" data-i18n="btnScanCamDefault">🔍 Scan Camera Roll</button>
+          <div id="camFileList" class="file-list"></div>
+          <div class="action-row" id="camActions" style="display:none">
+            <button class="btn-secondary" id="btnSelectAllCam" data-i18n="selectAll">Select All</button>
+            <button class="btn-primary" id="btnDeleteCam" data-i18n="deleteSelected">🗑 Delete Selected</button>
           </div>
         </div>
       </div>
@@ -340,17 +522,17 @@
         <div class="adv-header" onclick="toggleAdv('unused')">
           <div class="adv-icon">📱</div>
           <div class="adv-title-wrap">
-            <div class="adv-title">Unused App Cleaner</div>
-            <div class="adv-sub" id="unusedSub">App tidak dipakai &gt; 6 bulan</div>
+            <div class="adv-title"><span data-i18n="advTitleUnused">Unused App Cleaner</span> <span class="pro-lock" data-i18n="proLockPro">🔒 PRO</span></div>
+            <div class="adv-sub" id="unusedSub" data-i18n="advSubUnused">App tidak dipakai &gt; 6 bulan</div>
           </div>
           <div class="adv-chevron" id="chevUnused">▼</div>
         </div>
         <div class="adv-body hidden" id="unusedBody">
-          <button class="btn-scan-adv" id="btnScanUnused">🔍 Scan Aplikasi Jarang Dipakai</button>
+          <button class="btn-scan-adv" id="btnScanUnused" data-i18n="btnScanUnusedDefault">🔍 Scan Aplikasi Jarang Dipakai</button>
           <div id="unusedFileList" class="file-list"></div>
           <div class="action-row" id="unusedActions" style="display:none">
-            <button class="btn-secondary" id="btnSelectAllUnused">Select All</button>
-            <button class="btn-primary" id="btnUninstallUnused">🗑 Uninstall Terpilih</button>
+            <button class="btn-secondary" id="btnSelectAllUnused" data-i18n="selectAll">Select All</button>
+            <button class="btn-primary" id="btnUninstallUnused" data-i18n="btnUninstallSelectedDefault">🗑 Uninstall Terpilih</button>
           </div>
         </div>
       </div>
@@ -360,46 +542,46 @@
         <div class="adv-header" onclick="toggleAdv('ads')">
           <div class="adv-icon">🚫</div>
           <div class="adv-title-wrap">
-            <div class="adv-title">Remove Ads</div>
-            <div class="adv-sub">Blokir iklan di semua app &amp; browser</div>
+            <div class="adv-title" data-i18n="advTitleAds">Remove Ads</div>
+            <div class="adv-sub" data-i18n="advSubAds">Blokir iklan di semua app &amp; browser</div>
           </div>
           <div class="adv-chevron" id="chevAds">▼</div>
         </div>
         <div class="adv-body hidden" id="adsBody">
-          <p class="ads-desc">
+          <p class="ads-desc" data-i18n="adsDesc" data-i18n-html>
             Aktifkan <b>Private DNS</b> bawaan Android dan arahkan ke DNS anti-iklan.
             Ini memblokir sebagian besar iklan (banner, popup, video ads) di semua
             aplikasi &amp; browser sekaligus di level jaringan &mdash; tanpa root, tanpa
             aplikasi VPN tambahan.
           </p>
           <div class="ads-dns-row">
-            <span class="ads-dns-label">Hostname DNS anti-iklan</span>
+            <span class="ads-dns-label" data-i18n="adsDnsLabel">Hostname DNS anti-iklan</span>
             <div class="ads-dns-box">
               <code id="adsDnsHost">dns.adguard-dns.com</code>
-              <button class="btn-copy" id="btnCopyDns">Salin</button>
+              <button class="btn-copy" id="btnCopyDns" data-i18n="btnCopy">Salin</button>
             </div>
           </div>
           <ol class="ads-steps">
-            <li>Tap <b>Buka Pengaturan Jaringan</b> di bawah</li>
-            <li>Masuk ke <b>Network &amp; Internet → Private DNS</b> (nama menu bisa sedikit berbeda tiap merk HP)</li>
-            <li>Pilih <b>Hostname penyedia DNS pribadi</b>, tempel hostname di atas, lalu Simpan</li>
+            <li data-i18n="adsStep1" data-i18n-html>Tap <b>Buka Pengaturan Jaringan</b> di bawah</li>
+            <li data-i18n="adsStep2" data-i18n-html>Masuk ke <b>Network &amp; Internet → Private DNS</b> (nama menu bisa sedikit berbeda tiap merk HP)</li>
+            <li data-i18n="adsStep3" data-i18n-html>Pilih <b>Hostname penyedia DNS pribadi</b>, tempel hostname di atas, lalu Simpan</li>
           </ol>
-          <button class="btn-scan-adv" id="btnOpenDnsSettings">⚙️ Buka Pengaturan Jaringan</button>
+          <button class="btn-scan-adv" id="btnOpenDnsSettings" data-i18n="btnOpenNetworkSettings">⚙️ Buka Pengaturan Jaringan</button>
 
           <div class="ads-note">
-            <div class="ads-note-title">⚠️ Kalau setelah Simpan internet malah tidak bisa connect</div>
-            <p>
+            <div class="ads-note-title" data-i18n="adsNoteTitle">⚠️ Kalau setelah Simpan internet malah tidak bisa connect</div>
+            <p data-i18n="adsNoteBody">
               Beberapa jaringan WiFi (kantor, kampus, WiFi publik) memblokir port khusus
               yang dipakai Private DNS, sehingga Android menolak semua koneksi sampai
               pengaturannya diubah lagi. Hostname DNS-nya tidak salah — jaringan itu saja
               yang tidak mendukung fitur ini. Cara mengatasinya:
             </p>
             <ol>
-              <li>Buka lagi <b>Network &amp; Internet → Private DNS</b></li>
-              <li>Pilih <b>Otomatis</b> (bukan Mati) saat berada di jaringan tersebut &mdash;
+              <li data-i18n="adsNoteStep1" data-i18n-html>Buka lagi <b>Network &amp; Internet → Private DNS</b></li>
+              <li data-i18n="adsNoteStep2" data-i18n-html>Pilih <b>Otomatis</b> (bukan Mati) saat berada di jaringan tersebut &mdash;
                 mode ini otomatis kembali ke DNS biasa kalau DNS anti-iklan tidak didukung,
                 jadi internet tetap jalan (ad-block sementara tidak aktif di jaringan itu)</li>
-              <li>Ganti lagi ke <b>Hostname penyedia DNS pribadi</b> saat kembali ke WiFi
+              <li data-i18n="adsNoteStep3" data-i18n-html>Ganti lagi ke <b>Hostname penyedia DNS pribadi</b> saat kembali ke WiFi
                 rumah atau data seluler yang mendukung</li>
             </ol>
           </div>
@@ -411,18 +593,18 @@
         <div class="adv-header" onclick="toggleAdv('sysCache')">
           <div class="adv-icon">🧽</div>
           <div class="adv-title-wrap">
-            <div class="adv-title">Bersihkan Cache Semua App</div>
-            <div class="adv-sub">Lewat cleaner bawaan sistem</div>
+            <div class="adv-title" data-i18n="advTitleSysCache">Bersihkan Cache Semua App</div>
+            <div class="adv-sub" data-i18n="advSubSysCache">Lewat cleaner bawaan sistem</div>
           </div>
           <div class="adv-chevron" id="chevSysCache">▼</div>
         </div>
         <div class="adv-body hidden" id="sysCacheBody">
-          <p class="ads-desc">
+          <p class="ads-desc" data-i18n="sysCacheDesc">
             Android tidak mengizinkan app pihak ketiga (termasuk SmartClean) menghapus
             cache internal app lain secara langsung. Satu-satunya cara resmi & aman untuk
             membersihkan cache semua app sekaligus adalah lewat cleaner bawaan sistem HP kamu.
           </p>
-          <button class="btn-scan-adv" id="btnOpenStorageSettings">🧹 Buka Cleaner Bawaan Sistem</button>
+          <button class="btn-scan-adv" id="btnOpenStorageSettings" data-i18n="btnOpenBuiltinCleaner">🧹 Buka Cleaner Bawaan Sistem</button>
         </div>
       </div>
 
@@ -433,21 +615,27 @@
   <nav class="bottom-nav">
     <button class="nav-btn active" data-sec="clean">
       <span class="nav-icon">🧹</span>
-      <span class="nav-label">Clean</span>
+      <span class="nav-label" data-i18n="navClean">Clean</span>
     </button>
     <button class="nav-btn" data-sec="defrag">
       <span class="nav-icon">💾</span>
-      <span class="nav-label">Defrag</span>
+      <span class="nav-label" data-i18n="navDefrag">Defrag</span>
     </button>
     <button class="nav-btn" data-sec="battery">
       <span class="nav-icon">🔋</span>
-      <span class="nav-label">Battery</span>
+      <span class="nav-label" data-i18n="navBattery">Battery</span>
     </button>
     <button class="nav-btn" data-sec="advanced">
       <span class="nav-icon">⚙️</span>
-      <span class="nav-label">Advanced</span>
+      <span class="nav-label" data-i18n="navAdvanced">Advanced</span>
     </button>
   </nav>
+
+  <!-- Ad banner slot (Free tier only) — reserves the layout position for a real AdMob
+       adaptive banner (DEVELOP.md Phase 3); no ad SDK wired up yet, this is layout-only. -->
+  <div id="adBannerSlot" class="ad-banner-slot">
+    <span data-i18n="adBannerPlaceholder">Ad Banner (Placeholder)</span>
+  </div>
 </div>
 
 <!-- Toast -->
@@ -459,8 +647,8 @@
     <div class="modal-title" id="modalTitle"></div>
     <div class="modal-body" id="modalBody"></div>
     <div class="modal-actions">
-      <button class="btn-secondary" id="modalCancel">Cancel</button>
-      <button class="btn-primary" id="modalOk">OK</button>
+      <button class="btn-secondary" id="modalCancel" data-i18n="modalCancel">Cancel</button>
+      <button class="btn-primary" id="modalOk" data-i18n="modalOk">OK</button>
     </div>
   </div>
 </div>
@@ -478,7 +666,7 @@
         <div class="cp-percent" id="cleanProgressPercent">0%</div>
       </div>
     </div>
-    <div class="cp-label">🧹 Membersihkan file…</div>
+    <div class="cp-label" data-i18n="cpLabel">🧹 Membersihkan file…</div>
   </div>
 </div>
 
@@ -490,10 +678,38 @@
 
 <div id="resultPanel" class="result-panel hidden">
   <div class="rp-header">
-    <span class="rp-title">📊 Before &amp; After</span>
+    <span class="rp-title" data-i18n="rpTitle">📊 Before &amp; After</span>
     <button class="rp-close" onclick="closeResultPanel()">✕</button>
   </div>
   <div class="rp-body" id="resultBody"></div>
+</div>
+
+<!-- ─── Full-size photo/video preview (tap a thumbnail to open) ─── -->
+<div id="previewModal" class="preview-overlay hidden" onclick="closePreview()">
+  <div class="preview-stage" onclick="event.stopPropagation()">
+    <img id="previewImg" class="preview-media hidden" alt="">
+    <video id="previewVideo" class="preview-media hidden" controls playsinline autoplay></video>
+    <div class="preview-caption" id="previewCaption"></div>
+  </div>
+</div>
+
+<!-- ─── Upgrade to Pro (local-testing simulate — no Google Play Billing wired yet) ─── -->
+<div id="upgradeModal" class="modal hidden">
+  <div class="modal-box upgrade-box">
+    <button class="upgrade-close" onclick="closeUpgradeModal()">✕</button>
+    <div class="upgrade-crown">⭐</div>
+    <div class="modal-title">SmartClean Pro</div>
+    <div class="upgrade-reason" id="upgradeReason" data-i18n="upgradeReasonGeneric">Upgrade untuk membuka semua fitur tanpa batas.</div>
+    <ul class="upgrade-benefits">
+      <li data-i18n="upgradeBenefit1">📥 Hapus file Download &gt; 90 hari</li>
+      <li data-i18n="upgradeBenefit2">📲 Hapus file APK installer</li>
+      <li data-i18n="upgradeBenefit3">🎥 Hapus Screen Recording</li>
+      <li data-i18n="upgradeBenefit4">✈️ Telegram Cleaner — media &amp; cache penuh</li>
+    </ul>
+    <div class="upgrade-price" id="upgradePrice">Rp 49.999</div>
+    <button class="btn-primary upgrade-buy" id="btnUpgradeBuy" onclick="purchasePro()" data-i18n="upgradeBuyLabel">Upgrade — Rp 49.999</button>
+    <button class="upgrade-restore" onclick="restorePro()" data-i18n="upgradeRestore">Mode testing: kembali ke Free</button>
+  </div>
 </div>
 
 <script src="native-bridge.js"></script>

@@ -14,6 +14,33 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    buildFeatures {
+        buildConfig true
+    }
+    // SmartClean ships as ONE app ("public") with a real Free/Pro feature split built in
+    // (see DEVELOP.md Phase 2) — there is no separate "Pro APK". "unlocked" is a second,
+    // internal-only build for QA to eyeball every Pro-locked screen without purchasing/
+    // toggling anything; it must never be distributed publicly, hence the distinct app
+    // name/icon/package so it can't be mistaken for the real release build even installed
+    // side by side on the same test device.
+    flavorDimensions "variant"
+    productFlavors {
+        // Named "prod" rather than "public" — the latter is a Groovy/Java reserved word and
+        // unsafe as a Gradle DSL container name. This is the real release build: same app
+        // name/icon/package as what ships to users.
+        prod {
+            dimension "variant"
+            resValue "string", "app_name", "SmartClean"
+            buildConfigField "boolean", "IS_UNLOCKED_TEST_BUILD", "false"
+        }
+        unlocked {
+            dimension "variant"
+            applicationIdSuffix ".unlocked"
+            versionNameSuffix "-unlocked"
+            resValue "string", "app_name", "SmartClean (Unlocked Test)"
+            buildConfigField "boolean", "IS_UNLOCKED_TEST_BUILD", "true"
+        }
+    }
     signingConfigs {
         debug {
             storeFile file('debug.keystore')
@@ -27,8 +54,9 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
     compileOptions {

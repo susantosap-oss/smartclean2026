@@ -107,11 +107,18 @@ public class AppManagerPlugin extends Plugin {
     }
 
     // ─── Uninstall a single app (system confirmation dialog) ─────────────────
+    // Unused App Cleaner is entirely Pro-locked (PRO_LOCKED_CARDS.unused blocks the
+    // accordion in JS) — gated here too so calling this method directly (skipping the JS
+    // gate) can't uninstall apps on a Free install.
     @PluginMethod
     public void uninstallApp(PluginCall call) {
         String pkg = call.getString("packageName");
         if (pkg == null || pkg.isEmpty()) {
             call.reject("packageName is required");
+            return;
+        }
+        if (!new com.smartclean.app.security.EntitlementGuard(getContext()).isFeatureAllowed("unused", 1, null)) {
+            call.reject("PRO_REQUIRED");
             return;
         }
         try {
@@ -167,6 +174,19 @@ public class AppManagerPlugin extends Plugin {
                 call.reject("Could not open storage settings: " + e2.getMessage());
             }
         }
+    }
+
+    // ─── Build flavor (prod vs internal unlocked-test) ────────────────────────
+    // Tells the JS side whether this install is the real "prod" release build (real
+    // users start on the Free tier) or the internal-only "unlocked" QA build (see
+    // android/app/build.gradle productFlavors) — so a fresh install of the QA build
+    // starts fully unlocked for testing without a real purchase/toggle needed, while
+    // the actual release build always starts as a normal Free-tier install.
+    @PluginMethod
+    public void getBuildFlavor(PluginCall call) {
+        JSObject res = new JSObject();
+        res.put("isUnlockedTestBuild", com.smartclean.app.BuildConfig.IS_UNLOCKED_TEST_BUILD);
+        call.resolve(res);
     }
 
     // ─── Keep screen on during long scan/clean operations ─────────────────────
