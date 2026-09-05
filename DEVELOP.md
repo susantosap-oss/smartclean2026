@@ -549,11 +549,58 @@ Keywords utama yang kompetitornya lemah:
 
 ---
 
-## Catatan Prioritas Pengerjaan
+## Catatan Prioritas Pengerjaan (assessment 2026-09-05, Play Console akun sudah aktif)
 
+Status jujur: fondasi (Free/Pro rules, 6 fitur baru, i18n, native security gate) sudah solid
+dan mostly selesai. Tapi sisanya **bukan cuma "tinggal isi key/ID"** — ada 3 kategori
+pekerjaan yang beda sifatnya, jangan disamaratakan:
+
+### Kategori 1 — Beneran cuma isi key/config
+- Signature hash asli → `SecurityPlugin.java` (`EXPECTED_SIGNATURE_SHA256_DEBUG`)
+- Base64 license key asli → `LicenseVerifier`
+- Product ID billing asli (setelah dibuat di Play Console)
+
+### Kategori 2 — Kerja kode nyata, BUKAN sekadar config, walau key sudah ada
+- **AdMob masih placeholder `<div>` doang** — belum ada SDK/kode serving iklan sama sekali
+  (`#adBannerSlot`, lihat changelog i18n/Free-Pro di atas). Dapat Ad Unit ID tidak otomatis
+  bikin iklan muncul; integrasi SDK-nya sendiri belum dikerjakan (sengaja, sesuai pilihan
+  waktu itu: placeholder posisi dulu).
+- **Google Play Billing belum di-wire di branch ini** — `purchasePro()` masih cuma flip flag
+  lokal. Port `BillingManagerPlugin` dari `master` itu kerjaan yang jelas/terbatas, tapi tetap
+  kerjaan, plus perlu testing pembelian sungguhan (akun license tester, alur purchase/refund/
+  restore) yang makan waktu nyata, bukan sesuatu yang bisa langsung jadi rilis pertama.
+- **Belum ada release signingConfig** — `build.gradle` cuma punya `signingConfigs.debug`.
+- Debug `Log.e`/`Log.d` masih ada di semua native plugin — sebaiknya dibersihkan sebelum rilis
+  (beberapa nge-log path file/hasil scan yang tidak seharusnya nongol di logcat produksi).
+
+### Kategori 3 — Bukan kode, tapi tetap blocking, sebagian ada risiko nyata
+- **Belum ada testing multi-device.** Seluruh sesi ini cuma diverifikasi di SATU device
+  (OPPO/Realme) — dan di device itu SAJA sudah ketemu kejutan spesifik OEM (nama folder
+  recycle bin custom, process retention agresif yang bikin input lag). Xiaomi/MIUI dan
+  Samsung/OneUI dikenal berperilaku beda persis di area API yang paling diandalkan app ini
+  (storage, notification listener, background process) — ini risiko nyata, bukan formalitas.
+- **Penanganan penolakan izin belum diuji** — belum sengaja dites apa yang terjadi kalau user
+  menolak `MANAGE_EXTERNAL_STORAGE` atau Usage Access.
+- **Review `MANAGE_EXTERNAL_STORAGE` beresiko nyata ditolak** — butuh video demo + justifikasi
+  tertulis, sudah ada rencana cadangan "kurangi scope" di checklist Phase 1 kalau ditolak.
+- **Halaman Privacy Policy yang di-hosting (GitHub Pages) masih versi lama** — teks di dalam
+  app sudah dikoreksi (klaim izin Kamera yang salah + jadi bilingual) sesi ini, tapi versi
+  eksternal yang di-link tombol "baca versi lengkap di web" belum diupdate menyusul.
+- Aset Play Store (icon, screenshot, deskripsi, content rating) — belum dikerjakan sama sekali,
+  murni kerja kreatif/bisnis yang tidak bisa dikerjakan dari kode.
+
+### Urutan disarankan
 ```
-[Sekarang]     → Testing & bug fixing semua fitur yang ada
-[Setelah stabil] → Implementasi Google Play Billing (in-app purchase)
-[Setelah billing] → Implementasi AdMob banner (free user saja)
-[Terakhir]     → Persiapan aset Play Store & submit
+[Sekarang, kamu]      → Play Console: buat app listing, App Signing/keystore rilis,
+                          product ID Billing, akun AdMob (jika mau iklan asli),
+                          update halaman Privacy Policy yang di-hosting
+[Paralel, saya]        → Bersihkan debug logs; siap port BillingManagerPlugin begitu
+                          product ID ada; siap wiring AdMob SDK begitu App ID ada
+[Setelah key siap]     → Port Billing + testing pembelian sungguhan; integrasi AdMob SDK;
+                          ganti signature hash placeholder
+[Sebelum submit]       → Testing multi-device (min. OPPO/Xiaomi/Samsung, Android 10/12/14),
+                          uji graceful degradation saat izin ditolak
+[Terakhir]             → Aset Play Store, form deklarasi sensitive permissions
+                          (MANAGE_EXTERNAL_STORAGE + video demo, PACKAGE_USAGE_STATS,
+                          REQUEST_DELETE_PACKAGES), content rating, submit
 ```
