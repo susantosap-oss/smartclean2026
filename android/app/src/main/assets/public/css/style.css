@@ -17,9 +17,17 @@
   --nav-h: 64px;
   --header-h: 56px;
   --storage-h: 28px;
-  --ad-h: 56px; /* reserved ad-banner-slot height, Free tier only — see .is-pro override */
+  /* Android 15+ (targetSdk 36) forces edge-to-edge and ignores statusBarColor/
+     navigationBarColor — the WebView draws behind the system bars, so these two
+     insets are the only way left to keep header/nav clear of them. Folded into
+     --ad-h (rather than --nav-h) because ad-banner-slot is the true bottom-most
+     flex child in both Free and Pro layouts, so every "bottom: calc(--nav-h +
+     --ad-h + …)" fixed-position offset picks up the safe-area automatically. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --ad-h: calc(56px + var(--safe-bottom)); /* reserved ad-banner-slot height, Free tier only — see .is-pro override */
 }
-body.is-pro { --ad-h: 0px; }
+body.is-pro { --ad-h: var(--safe-bottom); }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
@@ -137,9 +145,10 @@ html, body {
 
 /* ── Header ── */
 .header {
-  height: var(--header-h);
+  height: calc(var(--header-h) + var(--safe-top));
   display: flex; align-items: center; justify-content: space-between;
-  padding: 0 16px;
+  padding: var(--safe-top) 16px 0;
+  box-sizing: border-box;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -154,6 +163,12 @@ html, body {
 }
 .header-pro-badge:active { opacity: .6; }
 .header-pro-badge.hidden { display: none; }
+.header-trial-badge {
+  background: var(--red, #ff5252); color: #fff;
+  font-size: 10px; font-weight: 700;
+  padding: 2px 6px; border-radius: 4px;
+}
+.header-trial-badge.hidden { display: none; }
 .header-storage { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .storage-chip {
   font-size: 10.5px; color: var(--text2);
@@ -788,7 +803,12 @@ html, body {
   font-size: 11px;
   overflow: hidden;
 }
-body.is-pro .ad-banner-slot { display: none; }
+/* Pro: no ad, but --ad-h still equals --safe-bottom here (see :root), and this slot
+   is the only flex child carrying that inset into the actual layout. `display:none`
+   would collapse it to 0px and leave .bottom-nav flush against the screen edge —
+   overlapping the system nav bar on edge-to-edge devices. Keep the box, hide the ad UI. */
+body.is-pro .ad-banner-slot { border-top: none; }
+body.is-pro .ad-banner-slot span { display: none; }
 
 /* ── Toast ── */
 /* Solid (not translucent) background on purpose — the toast sits directly over the

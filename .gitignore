@@ -1,9 +1,12 @@
 node_modules/
 android/app/build/
+android/build/
 android/.gradle/
 android/local.properties
 android/app/debug.keystore
 android/app/release.keystore
+android/keystore.properties
+android/keystore-credentials.txt
 android/capacitor-cordova-android-plugins/
 *.apk
 *.aab

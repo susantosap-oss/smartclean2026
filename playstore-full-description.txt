@@ -1,0 +1,46 @@
+🧹 SmartClean — Aplikasi Pembersih & Optimasi HP Anda
+
+Rasakan HP Android yang lebih ringan, lega, dan responsif. SmartClean membantu Anda membersihkan file sampah, duplikat, dan cache yang tidak diperlukan, sekaligus mengelola aplikasi dan penyimpanan dengan mudah — semua dalam satu aplikasi.
+
+✨ FITUR UTAMA
+
+🗑️ Pembersih Sampah (Junk Cleaner)
+Scan dan bersihkan file cache, file sementara, data aplikasi yang sudah tidak terpakai, dan file backup pesan dalam sekali tap.
+
+📱 WhatsApp Media Cleaner
+Temukan dan bersihkan video, foto, dokumen, dan audio WhatsApp yang menumpuk dan memakan ruang penyimpanan.
+
+📸 Camera Media Cleaner
+Kelola dan bersihkan foto/video hasil kamera yang sudah tidak diperlukan.
+
+🔍 Duplicate Finder
+Deteksi file duplikat di penyimpanan Anda dan hapus salinan yang tidak perlu untuk menghemat ruang.
+
+⚡ Memory Booster
+Pantau penggunaan RAM, hentikan aplikasi yang berjalan di background, dan cek info baterai untuk performa HP yang lebih optimal.
+
+📦 App Manager
+Lihat aplikasi yang jarang digunakan, kelola dan uninstall aplikasi langsung dari SmartClean.
+
+📁 Pembersih Lanjutan
+• File berukuran besar (Big Files)
+• File APK bekas install
+• Folder kosong
+• File unduhan lama
+• Rekaman layar (Screen Recording)
+• Media Telegram
+• File yang baru dihapus (Recently Deleted)
+
+🔔 Notification Cleaner
+Bersihkan notifikasi yang menumpuk di panel notifikasi Anda.
+
+🌐 Dwi-bahasa
+Tersedia dalam Bahasa Indonesia dan English, menyesuaikan otomatis dengan bahasa perangkat Anda.
+
+🔒 PRIVASI ANDA TERJAGA
+Seluruh proses scan dan pembersihan dilakukan sepenuhnya di perangkat Anda (on-device) — SmartClean tidak mengunggah atau membagikan data pribadi Anda ke server mana pun.
+
+💎 VERSI GRATIS & PRO
+SmartClean dapat digunakan gratis dengan fitur inti yang lengkap. Upgrade ke versi Pro untuk membuka fitur pembersihan lanjutan tanpa batas.
+
+Unduh SmartClean sekarang dan rasakan HP Android Anda yang lebih cepat, lega, dan rapi!

@@ -122,6 +122,7 @@ public class FileCleanerPlugin extends Plugin {
                 long junkSize   = totals.junk + scanOrphanedAppData();
                 long msgSize    = sizeDbBackups(totals.dbFiles);
                 int  notifCount = getNotifCount();
+                NotificationService.forceRebindIfNeeded(getContext());
                 boolean notifGranted = NotificationService.instance != null;
 
                 JSObject doneProgress = new JSObject();
@@ -260,6 +261,14 @@ public class FileCleanerPlugin extends Plugin {
                 // case and are therefore different strings.
                 java.util.Set<String> seenDirs = new java.util.HashSet<>();
 
+                // Unlike scanRootCombined()/walkCombined() (junk scan), this walk previously
+                // reported nothing to JS until it fully finished — a WA folder with a large
+                // accumulated "Sent"/"Statuses" history (common on devices with high storage
+                // use) could take a long time with zero UI feedback, reading as "stuck" even
+                // though it was still working. Reuse the same asymptotic-progress pattern here.
+                final AtomicInteger progress = new AtomicInteger(0);
+                final AtomicLong visited = new AtomicLong(0);
+
                 for (String[] app : WA_APPS) {
                     String mediaRoot = app[0];
                     String prefix    = app[1];
@@ -279,8 +288,9 @@ public class FileCleanerPlugin extends Plugin {
                     // Recurse (not a flat listFiles()) so per-type "Sent"/"Private" subfolders —
                     // WhatsApp puts media YOU sent in e.g. "WhatsApp Images/Sent", which is often
                     // sizeable — get scanned too instead of silently skipped as a non-file entry.
-                    collectWaMedia(dir, type, cutoffMs, source, seenPaths, files, 0);
+                    collectWaMedia(dir, type, cutoffMs, source, seenPaths, files, 0, visited, progress);
                 }
+                bumpProgress(progress, 100, "wa", "scanProgress");
 
                 JSObject res = new JSObject();
                 res.put("files", files);
@@ -296,12 +306,15 @@ public class FileCleanerPlugin extends Plugin {
     // Recurses into subfolders (e.g. "Sent", "Private") instead of a flat listFiles(),
     // since those can hold a sizeable chunk of a WA media folder's real content.
     private void collectWaMedia(File dir, String type, long cutoffMs, String source,
-                                 java.util.Set<String> seenPaths, JSArray out, int depth) {
+                                 java.util.Set<String> seenPaths, JSArray out, int depth,
+                                 AtomicLong visited, AtomicInteger progress) {
         if (dir == null || !dir.exists() || depth > MAX_SCAN_DEPTH) return;
         File[] listed = dir.listFiles();
         if (listed == null) return;
         for (File f : listed) {
-            if (f.isDirectory()) { collectWaMedia(f, type, cutoffMs, source, seenPaths, out, depth + 1); continue; }
+            long v = visited.incrementAndGet();
+            bumpProgress(progress, asymptoticPercent(v, 97), "wa", "scanProgress");
+            if (f.isDirectory()) { collectWaMedia(f, type, cutoffMs, source, seenPaths, out, depth + 1, visited, progress); continue; }
             if (!matchesMediaType(f.getName(), type)) continue;
             if (cutoffMs > 0 && f.lastModified() >= cutoffMs) continue;
             if (!seenPaths.add(f.getAbsolutePath())) continue;

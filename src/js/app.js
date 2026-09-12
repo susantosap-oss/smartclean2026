@@ -28,6 +28,7 @@ let scanProgressActive = false;
 let cleanProgressActive = false;
 if (FileCleaner) {
   FileCleaner.addListener('scanProgress', (data) => {
+    if (data.stage === 'wa') { updateWAScanButtonProgress(data.percent); return; }
     if (!scanProgressActive) return;
     updateScanRingProgress(data.percent);
   });
@@ -35,6 +36,14 @@ if (FileCleaner) {
     if (!cleanProgressActive) return;
     updateCleanProgressPopup(data.percent);
   });
+}
+// WhatsApp media scan can recurse a large "Sent"/"Statuses" history with no other
+// feedback while running — show live percent on the button so it never reads as stuck.
+function updateWAScanButtonProgress(percent) {
+  const btn = document.getElementById('btnScanWA');
+  if (!btn || !btn.disabled) return;
+  const p = Math.max(0, Math.min(100, percent));
+  btn.textContent = `${t('scanningEllipsis')} ${p}%`;
 }
 function updateScanRingProgress(percent) {
   const p = Math.max(0, Math.min(100, percent));
@@ -2829,12 +2838,27 @@ async function runIntegrityCheckSoftWarning() {
   } catch (e) { /* best-effort — never block app usage over this */ }
 }
 
+// Cosmetic only — the real enforcement (block screen + self-uninstall prompt after the
+// 14-day deadline) lives natively in MainActivity/TrialGuard and runs regardless of
+// whether this ever gets to draw. This just gives testers a visible countdown.
+async function showTrialBadge() {
+  const badge = document.getElementById('trialExpiryBadge');
+  if (!badge || !AppManager) return;
+  try {
+    const info = await AppManager.getBuildFlavor();
+    if (!info || !info.isTimeLimitedBuild) return;
+    badge.textContent = `BETA · ${info.trialDaysRemaining}h lagi`;
+    badge.classList.remove('hidden');
+  } catch (e) { /* not a time-limited build, or native call unavailable — leave hidden */ }
+}
+
 async function init() {
   setLang(currentLang); // applies static translations + syncs both toggle entry points
   isPro = await resolveInitialIsPro();
   setProState(isPro);
   await loadStorageInfo();
   runIntegrityCheckSoftWarning(); // fire-and-forget, must never delay init()
+  showTrialBadge(); // fire-and-forget, must never delay init()
 }
 
 // Splash → App

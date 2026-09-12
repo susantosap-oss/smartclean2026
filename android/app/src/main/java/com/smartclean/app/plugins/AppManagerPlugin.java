@@ -186,6 +186,9 @@ public class AppManagerPlugin extends Plugin {
     public void getBuildFlavor(PluginCall call) {
         JSObject res = new JSObject();
         res.put("isUnlockedTestBuild", com.smartclean.app.BuildConfig.IS_UNLOCKED_TEST_BUILD);
+        res.put("isTimeLimitedBuild", com.smartclean.app.security.TrialGuard.isTimeLimited());
+        res.put("trialExpiryTimestampMs", com.smartclean.app.security.TrialGuard.expiryTimestampMs());
+        res.put("trialDaysRemaining", com.smartclean.app.security.TrialGuard.daysRemaining(getContext()));
         call.resolve(res);
     }
 
