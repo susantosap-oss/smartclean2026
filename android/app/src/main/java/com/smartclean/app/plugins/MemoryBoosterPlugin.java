@@ -42,7 +42,6 @@ public class MemoryBoosterPlugin extends Plugin {
     public void getStorageStats(PluginCall call) {
         new Thread(() -> {
             try {
-                Log.e(TAG, "getStorageStats ENTERED");
                 long intTotal = 0, intAvail = 0;
 
                 // Method A: java.io.File.getTotalSpace / getUsableSpace
@@ -51,8 +50,6 @@ public class MemoryBoosterPlugin extends Plugin {
                 File cacheDir = getContext().getCacheDir();
                 intTotal = cacheDir.getTotalSpace();
                 intAvail = cacheDir.getUsableSpace();
-                Log.e(TAG, "File.space cacheDir=" + cacheDir.getAbsolutePath()
-                        + " total=" + intTotal + " avail=" + intAvail);
 
                 // Method B: StatFs fallback if File.space returned 0.
                 if (intTotal == 0) {
@@ -69,16 +66,10 @@ public class MemoryBoosterPlugin extends Plugin {
                             StatFs stat = new StatFs(path);
                             long tot = stat.getBlockCountLong() * stat.getBlockSizeLong();
                             long av  = stat.getAvailableBlocksLong() * stat.getBlockSizeLong();
-                            Log.e(TAG, "StatFs " + path + ": total=" + tot + " avail=" + av);
                             if (tot > intTotal) { intTotal = tot; intAvail = av; }
-                        } catch (Exception e) {
-                            Log.e(TAG, "StatFs FAIL " + path + ": " + e.getMessage());
-                        }
+                        } catch (Exception ignored) {}
                     }
                 }
-
-                Log.e(TAG, "RESULT total=" + intTotal + " avail=" + intAvail
-                        + " used=" + (intTotal - intAvail));
 
                 long intUsed = intTotal - intAvail;
 

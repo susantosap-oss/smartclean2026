@@ -130,9 +130,6 @@ public class FileCleanerPlugin extends Plugin {
                 doneProgress.put("stage", "done");
                 notifyListeners("scanProgress", doneProgress);
 
-                Log.e(TAG, "SCAN RESULT: tmp=" + tmpSize + " msg=" + msgSize + " junk=" + junkSize
-                    + " notif=" + notifCount + " notifSvcConnected=" + notifGranted);
-
                 JSObject result = new JSObject();
                 JSObject data = new JSObject();
                 data.put("tmp",              tmpSize);
@@ -168,7 +165,6 @@ public class FileCleanerPlugin extends Plugin {
                     }
                 }
 
-                Log.e(TAG, "cleanJunkFiles types=" + types);
                 final AtomicInteger progress = new AtomicInteger(0);
                 boolean doTmp  = types.contains("tmp");
                 boolean doMsg  = types.contains("msg");
@@ -177,15 +173,13 @@ public class FileCleanerPlugin extends Plugin {
                 if (doTmp || doMsg || doJunk) {
                     CleanTotals ct = deleteCombinedRoot(doTmp, doJunk, progress);
                     freed += ct.freed;
-                    Log.e(TAG, "root walk done freed=" + freed);
-                    if (doMsg)  { freed += pruneDbBackups(ct.dbFiles); Log.e(TAG, "msg done freed="+freed); }
-                    if (doJunk) { freed += cleanOrphanedAppData();     Log.e(TAG, "junk done freed="+freed); }
+                    if (doMsg)  freed += pruneDbBackups(ct.dbFiles);
+                    if (doJunk) freed += cleanOrphanedAppData();
                 }
                 bumpProgress(progress, 90, "root", "cleanProgress");
 
-                if (types.contains("notif")) { dismissAllNotifications(); bumpProgress(progress, 96, "notif", "cleanProgress"); Log.e(TAG, "notif done"); }
+                if (types.contains("notif")) { dismissAllNotifications(); bumpProgress(progress, 96, "notif", "cleanProgress"); }
                 bumpProgress(progress, 100, "done", "cleanProgress");
-                Log.e(TAG, "cleanJunkFiles DONE freed=" + freed);
 
                 JSObject res = new JSObject();
                 res.put("freedBytes", freed);
@@ -244,7 +238,6 @@ public class FileCleanerPlugin extends Plugin {
     public void scanWAMedia(PluginCall call) {
         String type   = call.getString("type", "video");
         long cutoffMs = call.getLong("cutoffMs", 0L);
-        Log.e(TAG, "scanWAMedia type=" + type + " cutoffMs=" + cutoffMs + " now=" + System.currentTimeMillis());
 
         new Thread(() -> {
             try {
@@ -281,8 +274,6 @@ public class FileCleanerPlugin extends Plugin {
                     catch (Exception e) { dirKey = dir.getAbsolutePath().toLowerCase(java.util.Locale.ROOT); }
                     boolean isDup = exists && !seenDirs.add(dirKey);
                     boolean listable = exists && !isDup && dir.listFiles() != null;
-                    Log.e(TAG, "scanWAMedia dir=" + dir.getAbsolutePath()
-                        + " exists=" + exists + " dup=" + isDup + " listable=" + listable);
                     if (!listable) continue;
 
                     // Recurse (not a flat listFiles()) so per-type "Sent"/"Private" subfolders —
@@ -294,7 +285,6 @@ public class FileCleanerPlugin extends Plugin {
 
                 JSObject res = new JSObject();
                 res.put("files", files);
-                Log.e(TAG, "scanWAMedia TOTAL files=" + files.length());
                 call.resolve(res);
             } catch (Exception e) {
                 Log.e(TAG, "scanWAMedia ERROR", e);
