@@ -12,6 +12,8 @@ if (window.Capacitor) {
     { name: 'DuplicateFinder',  methods: _pm(['scanDuplicates','deleteFiles']) },
     { name: 'AppManager',       methods: _pm(['scanUnusedApps','uninstallApp','openNetworkSettings','openStorageSettings','setKeepScreenOn','getBuildFlavor']) },
     { name: 'Security',         methods: _pm(['setEntitlement','markFeatureUsed','runIntegrityChecks','verifyPurchaseSignature']) },
+    { name: 'AppUpdate',        methods: _pm(['checkForUpdate','startUpdate','completeUpdate']) },
+    { name: 'BillingManager',   methods: _pm(['getProStatus','getProductDetails','purchasePro','restorePurchases']) },
   );
   window.Capacitor.PluginHeaders = _ph;
 }
@@ -24,6 +26,8 @@ const DupFinder     = registerPlugin ? registerPlugin('DuplicateFinder') : null;
 const AppManager    = registerPlugin ? registerPlugin('AppManager')    : null;
 const Security      = registerPlugin ? registerPlugin('Security')     : null;
 const AppPlugin     = registerPlugin ? registerPlugin('App') : null;
+const AppUpdate     = registerPlugin ? registerPlugin('AppUpdate') : null;
+const BillingManager = registerPlugin ? registerPlugin('BillingManager') : null;
 let scanProgressActive = false;
 let cleanProgressActive = false;
 if (FileCleaner) {
@@ -67,13 +71,16 @@ function hideCleanProgressPopup() {
 // ════════════════════════════════════════
 //  PRO / FREEMIUM GATING
 //  Full Free/Pro spec: DEVELOP.md Phase 2. SmartClean ships as ONE app with this real
-//  Free/Pro split built in — no Google Play Billing wired up yet, so isPro is a local
-//  flag, and "Upgrade" just flips it so the free/pro UX is fully testable now (swap
-//  purchasePro()/restorePro() below for a real BillingManager call once billing lands).
+//  Free/Pro split built in, backed by real Google Play Billing (BillingManagerPlugin,
+//  one-time non-consumable product "smartclean_pro") — purchasePro()/restorePro() below
+//  call it directly. localStorage (PRO_CACHE_KEY) is just an instant-paint cache so the
+//  UI doesn't flash Free on every launch; refreshProStatus() in init() re-syncs it
+//  against the real Play Store purchase state (source of truth) shortly after.
 //  Separately, android/app/build.gradle's "unlocked" flavor is an INTERNAL-ONLY QA build
 //  (distinct app name/icon/package, never distributed) that starts fully unlocked —
 //  see resolveInitialIsPro() below, which is the only thing that flavor changes.
 // ════════════════════════════════════════
+const PRO_FALLBACK_PRICE = 'Rp 49.999'; // shown until getProductDetails() resolves the real Play Console price
 const PRO_CACHE_KEY = 'sc_is_pro';
 const _proCached = localStorage.getItem(PRO_CACHE_KEY);
 let isPro = _proCached === '1'; // real default (false) until resolveInitialIsPro() runs in init()
@@ -163,15 +170,64 @@ function markDailyUsed(key) {
   localStorage.setItem(`sc_daily_${key}`, today);
 }
 
-window.purchasePro = function() {
-  // Simulated local unlock — no BillingManager plugin on this branch yet.
-  setProState(true);
-  closeUpgradeModal();
-  toast(t('toastProActivated'));
+// Re-syncs isPro against the real Play Store purchase state — the localStorage cache
+// (PRO_CACHE_KEY) already gave an instant best-guess before this resolves, so this only
+// needs to correct it, not gate the initial render. Fire-and-forget from init(), same
+// pattern as runIntegrityCheckSoftWarning()/showTrialBadge().
+async function refreshProStatus() {
+  if (!BillingManager) return; // browser preview / sideloaded build — keep cached state
+  try {
+    const res = await BillingManager.getProStatus();
+    setProState(res.isPro);
+  } catch (e) { /* keep cached state */ }
+}
+
+// Loads the real formatted price from Play Console (falls back to the hardcoded
+// PRO_FALLBACK_PRICE already in the DOM/i18n strings if the plugin or the "smartclean_pro"
+// product isn't available yet — e.g. not created/activated in Play Console).
+async function loadProProduct() {
+  if (!BillingManager) return;
+  const priceEl = document.getElementById('upgradePrice');
+  const buyBtn  = document.getElementById('btnUpgradeBuy');
+  try {
+    proProduct = await BillingManager.getProductDetails();
+    if (priceEl) priceEl.textContent = proProduct.formattedPrice;
+    if (buyBtn)  buyBtn.textContent  = `${t('upgradeBuyPrefix')} ${proProduct.formattedPrice}`;
+  } catch (e) { /* keep the PRO_FALLBACK_PRICE already shown */ }
+}
+let proProduct = null;
+
+window.purchasePro = async function() {
+  if (!BillingManager) {
+    toast(t('purchaseUnavailable'), 'error');
+    return;
+  }
+  const btn = document.getElementById('btnUpgradeBuy');
+  const originalLabel = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = t('purchaseProcessing'); }
+  try {
+    const res = await BillingManager.purchasePro();
+    setProState(res.isPro !== false);
+    closeUpgradeModal();
+    toast(t('toastProActivated'));
+  } catch (e) {
+    const msg = String((e && e.message) || e);
+    if (!msg.toLowerCase().includes('cancel')) {
+      toast(t('purchaseFailedPrefix') + msg, 'error');
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = originalLabel || t('upgradeBuyLabel'); }
+  }
 };
-window.restorePro = function() {
-  setProState(false);
-  toast(t('toastBackToFree'));
+window.restorePro = async function() {
+  if (!BillingManager) return;
+  try {
+    const res = await BillingManager.restorePurchases();
+    setProState(res.isPro);
+    toast(res.isPro ? t('toastRestoreSuccess') : t('toastRestoreNotFound'));
+  } catch (e) {
+    toast(t('purchaseFailedPrefix') + e.message, 'error');
+  }
 };
 
 // ════════════════════════════════════════
@@ -268,6 +324,10 @@ const I18N = {
     statusPermanentlyDeleted: 'Permanen dihapus',
     toastTrashCleaned: '✅ Recently Deleted berhasil dibersihkan!',
     toastFailedPrefix: 'Gagal: ',
+    // ── In-app update ──
+    updateAvailableToast: '⬇️ Update baru sedang diunduh di latar belakang…',
+    updateReadyTitle: 'Update Siap Dipasang',
+    updateReadyBody: 'Versi terbaru sudah selesai diunduh. Restart aplikasi sekarang untuk memasangnya?',
     // ── Defrag section ──
     sdCardNotDetected: 'Tidak terdeteksi',
     storagePctUsedSuffix: '% terpakai',
@@ -518,10 +578,15 @@ const I18N = {
     upgradeBenefit3: '🎥 Hapus Screen Recording',
     upgradeBenefit4: '✈️ Telegram Cleaner — media & cache penuh',
     upgradeBuyLabel: 'Upgrade — Rp 49.999',
-    upgradeRestore: 'Mode testing: kembali ke Free',
+    upgradeBuyPrefix: 'Upgrade —',
+    upgradeRestore: '↻ Pulihkan Pembelian',
     cpLabel: '🧹 Membersihkan file…',
-    toastProActivated: '🎉 Pro diaktifkan (mode testing lokal, belum lewat Google Play Billing).',
-    toastBackToFree: 'Kembali ke mode Free (testing lokal).',
+    toastProActivated: '🎉 Pro berhasil diaktifkan — semua fitur terbuka!',
+    purchaseUnavailable: 'Pembelian hanya tersedia lewat aplikasi yang terpasang dari Google Play.',
+    purchaseProcessing: '⏳ Memproses…',
+    purchaseFailedPrefix: 'Pembelian gagal: ',
+    toastRestoreSuccess: '✅ Pembelian Pro berhasil dipulihkan!',
+    toastRestoreNotFound: 'Tidak ada pembelian Pro ditemukan untuk akun Google Play ini.',
     // ── Back button / exit ──
     toastPressBackAgain: 'Tekan back lagi untuk keluar',
   },
@@ -593,6 +658,10 @@ const I18N = {
     statusPermanentlyDeleted: 'Permanently deleted',
     toastTrashCleaned: '✅ Recently Deleted cleared successfully!',
     toastFailedPrefix: 'Failed: ',
+    // ── In-app update ──
+    updateAvailableToast: '⬇️ Downloading update in the background…',
+    updateReadyTitle: 'Update Ready',
+    updateReadyBody: 'The latest version has finished downloading. Restart the app now to install it?',
     // ── Defrag section ──
     sdCardNotDetected: 'Not detected',
     storagePctUsedSuffix: '% used',
@@ -843,10 +912,15 @@ const I18N = {
     upgradeBenefit3: '🎥 Delete Screen Recordings',
     upgradeBenefit4: '✈️ Telegram Cleaner — full media & cache',
     upgradeBuyLabel: 'Upgrade — Rp 49.999',
-    upgradeRestore: 'Testing mode: back to Free',
+    upgradeBuyPrefix: 'Upgrade —',
+    upgradeRestore: '↻ Restore Purchase',
     cpLabel: '🧹 Cleaning files…',
-    toastProActivated: '🎉 Pro activated (local testing mode, not via Google Play Billing yet).',
-    toastBackToFree: 'Back to Free mode (local testing).',
+    toastProActivated: '🎉 Pro activated — every feature unlocked!',
+    purchaseUnavailable: 'Purchases are only available through the app installed from Google Play.',
+    purchaseProcessing: '⏳ Processing…',
+    purchaseFailedPrefix: 'Purchase failed: ',
+    toastRestoreSuccess: '✅ Pro purchase restored successfully!',
+    toastRestoreNotFound: 'No Pro purchase found for this Google Play account.',
     // ── Back button / exit ──
     toastPressBackAgain: 'Press back again to exit',
   },
@@ -2852,6 +2926,28 @@ async function showTrialBadge() {
   } catch (e) { /* not a time-limited build, or native call unavailable — leave hidden */ }
 }
 
+// In-app update prompt — reaches testers who can't be messaged directly (e.g. anonymous
+// r/testercommunity recruits) and doesn't depend on their device's Play Store auto-update
+// setting. No-ops silently on anything not installed via Play Store (sideloaded APK,
+// unlocked/betatest flavors) since checkForUpdate() always resolves available:false there.
+if (AppUpdate) {
+  AppUpdate.addListener('updateDownloaded', () => {
+    showModal(t('updateReadyTitle'), t('updateReadyBody'), () => AppUpdate.completeUpdate());
+  });
+}
+async function checkForAppUpdate() {
+  if (!AppUpdate) return;
+  try {
+    const r = await AppUpdate.checkForUpdate();
+    if (r.downloaded) {
+      showModal(t('updateReadyTitle'), t('updateReadyBody'), () => AppUpdate.completeUpdate());
+    } else if (r.available) {
+      toast(t('updateAvailableToast'), '', 6000);
+      await AppUpdate.startUpdate();
+    }
+  } catch (e) { /* best-effort — never block app usage over this */ }
+}
+
 async function init() {
   setLang(currentLang); // applies static translations + syncs both toggle entry points
   isPro = await resolveInitialIsPro();
@@ -2859,6 +2955,9 @@ async function init() {
   await loadStorageInfo();
   runIntegrityCheckSoftWarning(); // fire-and-forget, must never delay init()
   showTrialBadge(); // fire-and-forget, must never delay init()
+  checkForAppUpdate(); // fire-and-forget, must never delay init()
+  refreshProStatus(); // fire-and-forget, must never delay init() — corrects the cached isPro guess
+  loadProProduct(); // fire-and-forget, must never delay init() — swaps in the real Play Console price
 }
 
 // Splash → App

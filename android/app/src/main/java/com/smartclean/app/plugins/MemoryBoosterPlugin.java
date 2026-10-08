@@ -12,7 +12,6 @@ import android.os.Build;
 import android.os.Environment;
 import android.os.StatFs;
 import android.os.storage.StorageManager;
-import android.os.storage.StorageVolume;
 import android.util.Log;
 
 import com.getcapacitor.JSArray;
@@ -74,21 +73,32 @@ public class MemoryBoosterPlugin extends Plugin {
                 long intUsed = intTotal - intAvail;
 
                 // SD card
+                // getStorageVolumes()+getDirectory() was API 30-gated and getDirectory()
+                // is unreliable on OEM skins (notably OPPO/ColorOS, where it returns null
+                // without MANAGE_EXTERNAL_STORAGE) — causing removable cards to silently
+                // read as "not detected". getExternalFilesDirs() is app-scoped, needs no
+                // extra permission, and works down to API 19/21, so no SDK gate is needed.
                 long sdTotal = 0, sdUsed = 0;
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    StorageManager sm2 = (StorageManager) getContext().getSystemService(Context.STORAGE_SERVICE);
-                    for (StorageVolume vol : sm2.getStorageVolumes()) {
-                        if (vol.isRemovable()) {
-                            File dir = vol.getDirectory();
-                            if (dir != null && dir.exists()) {
+                try {
+                    File[] extDirs = getContext().getExternalFilesDirs(null);
+                    if (extDirs != null) {
+                        for (File dir : extDirs) {
+                            if (dir == null) continue;
+                            if (!Environment.isExternalStorageRemovable(dir)) continue;
+                            if (!Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState(dir))) continue;
+                            try {
                                 StatFs sdStat = new StatFs(dir.getPath());
-                                sdTotal = sdStat.getBlockCountLong() * sdStat.getBlockSizeLong();
-                                long sdAvail = sdStat.getAvailableBlocksLong() * sdStat.getBlockSizeLong();
-                                sdUsed = sdTotal - sdAvail;
-                            }
-                            break;
+                                long tot = sdStat.getBlockCountLong() * sdStat.getBlockSizeLong();
+                                long avail = sdStat.getAvailableBlocksLong() * sdStat.getBlockSizeLong();
+                                if (tot > sdTotal) {
+                                    sdTotal = tot;
+                                    sdUsed = tot - avail;
+                                }
+                            } catch (Exception ignored) {}
                         }
                     }
+                } catch (Exception e) {
+                    Log.e(TAG, "SD card detection error", e);
                 }
 
                 ActivityManager.MemoryInfo memInfo = new ActivityManager.MemoryInfo();

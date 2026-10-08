@@ -538,14 +538,15 @@ Keywords utama yang kompetitornya lemah:
 | Tier | Harga | Keterangan |
 |---|---|---|
 | **Free** | Rp 0 | Fitur terbatas + AdMob banner |
-| **Pro — Early Bird** | Rp 19.000 | 3–6 bulan pertama setelah launch |
-| **Pro — Regular** | Rp 39.000 | One-time, selamanya |
+| **Pro** | Rp 49.999 | One-time, selamanya |
 
-**Mengapa Rp 39.000:**
-- Di bawah psychological barrier Rp 50.000
-- 4x lebih murah dari CCleaner lifetime (Rp ~180.000)
+**Update 2026-09-21:** harga final yang sudah live di kode (`index.html`, `app.js` — `upgradePrice`/`upgradeBuyLabel`) adalah **Rp 49.999**, bukan Rp 39.000/Rp 19.000 seperti draft awal di bawah ini — draft lama tidak pernah dieksekusi. Tidak ada tier Early Bird terpisah yang diimplementasikan. Product ID Billing (`smartclean_pro`, lihat `BillingManagerPlugin` di `master`) harus dibuat di Play Console dengan harga Rp 49.999 ini.
+
+**Mengapa Rp 49.999 (bukan Rp 39.000 seperti draft awal):**
+- Masih charm-pricing di bawah psychological barrier Rp 50.000
+- One-time, jadi selisih ~10rb ke opsi lebih murah kecil dampaknya ke keputusan beli tapi ~25% lebih banyak revenue per transaksi
+- Tetap jauh lebih murah dari CCleaner lifetime (Rp ~180.000)
 - One-time = nilai jual besar di era subscription fatigue
-- Setara 1 cup kopi — mudah dirasionalisasi user
 
 ---
 

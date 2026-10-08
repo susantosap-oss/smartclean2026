@@ -7,6 +7,7 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import com.smartclean.app.BuildConfig;
+import com.smartclean.app.MainActivity;
 import com.smartclean.app.security.EntitlementGuard;
 import com.smartclean.app.security.IntegrityGuard;
 import com.smartclean.app.security.LicenseVerifier;
@@ -38,6 +39,9 @@ public class SecurityPlugin extends Plugin {
     public void setEntitlement(PluginCall call) {
         boolean isPro = Boolean.TRUE.equals(call.getBoolean("isPro", false));
         new EntitlementGuard(getContext()).setPro(isPro);
+        if (getActivity() instanceof MainActivity) {
+            ((MainActivity) getActivity()).updateAdVisibility(isPro);
+        }
         call.resolve();
     }
 

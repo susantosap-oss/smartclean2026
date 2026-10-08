@@ -21,11 +21,17 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import com.getcapacitor.BridgeActivity;
+import com.google.android.gms.ads.AdRequest;
+import com.google.android.gms.ads.AdView;
+import com.google.android.gms.ads.MobileAds;
 import com.smartclean.app.plugins.FileCleanerPlugin;
 import com.smartclean.app.plugins.MemoryBoosterPlugin;
 import com.smartclean.app.plugins.DuplicateFinderPlugin;
 import com.smartclean.app.plugins.AppManagerPlugin;
 import com.smartclean.app.plugins.SecurityPlugin;
+import com.smartclean.app.plugins.AppUpdatePlugin;
+import com.smartclean.app.plugins.BillingManagerPlugin;
+import com.smartclean.app.security.EntitlementGuard;
 import com.smartclean.app.security.TrialGuard;
 import com.smartclean.app.service.NotificationService;
 
@@ -38,6 +44,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(DuplicateFinderPlugin.class);
         registerPlugin(AppManagerPlugin.class);
         registerPlugin(SecurityPlugin.class);
+        registerPlugin(AppUpdatePlugin.class);
+        registerPlugin(BillingManagerPlugin.class);
         super.onCreate(savedInstanceState);
 
         if (TrialGuard.isExpired(this)) {
@@ -48,6 +56,45 @@ public class MainActivity extends BridgeActivity {
         requestLegacyStoragePermission();
         setupBackButton();
         setupEdgeToEdgeInsets();
+        setupAds();
+    }
+
+    // ─── AdMob (Free-tier banner) ──────────────────────────────────────────────
+    // Real Ad Unit ID belongs only to the "prod" flavor's release build — every other
+    // build (unlocked/debugbetatest, or any debug build) loads Google's official test
+    // banner instead, so QA/beta devices never generate real ad impressions/clicks
+    // against the live AdMob account (that pattern is what gets accounts flagged for
+    // invalid traffic).
+    private static final String TEST_BANNER_AD_UNIT_ID = "ca-app-pub-3940256099942544/6300978111";
+    private static final String PROD_BANNER_AD_UNIT_ID = "ca-app-pub-2214589251385894/1508601284";
+
+    private AdView adView;
+
+    private void setupAds() {
+        adView = findViewById(R.id.adView);
+        if (adView == null) return;
+        boolean useRealAds = !BuildConfig.DEBUG && !BuildConfig.IS_UNLOCKED_TEST_BUILD;
+        adView.setAdUnitId(useRealAds ? PROD_BANNER_AD_UNIT_ID : TEST_BANNER_AD_UNIT_ID);
+        MobileAds.initialize(this, status -> {});
+        // Read the persisted native entitlement (EntitlementGuard) directly rather than
+        // waiting for the WebView's JS to call setEntitlement() again on this launch —
+        // avoids a Pro user seeing the banner flash visible for a moment before it hides.
+        updateAdVisibility(new EntitlementGuard(this).isPro());
+    }
+
+    // Called by SecurityPlugin.setEntitlement() — the same single source of truth already
+    // used to gate every other Free/Pro-locked feature — so the ad shows/hides in lockstep
+    // with the rest of the app instead of drifting out of sync on its own logic.
+    public void updateAdVisibility(boolean isPro) {
+        if (adView == null) return;
+        runOnUiThread(() -> {
+            if (isPro) {
+                adView.setVisibility(View.GONE);
+            } else {
+                adView.setVisibility(View.VISIBLE);
+                adView.loadAd(new AdRequest.Builder().build());
+            }
+        });
     }
 
     // Android 15+ (targetSdk 36) forces edge-to-edge, and CSS env(safe-area-inset-*)
@@ -175,6 +222,19 @@ public class MainActivity extends BridgeActivity {
             usageAccessPromptShown = true;
             requestUsageAccessPermission();
         }
+        if (adView != null) adView.resume();
+    }
+
+    @Override
+    public void onPause() {
+        if (adView != null) adView.pause();
+        super.onPause();
+    }
+
+    @Override
+    public void onDestroy() {
+        if (adView != null) adView.destroy();
+        super.onDestroy();
     }
 
     // Android 6-10 (API 23-29) gate raw filesystem access (Environment.getExternalStorageDirectory())
