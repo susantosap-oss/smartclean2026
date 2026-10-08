@@ -3,12 +3,17 @@ package com.smartclean.app;
 import android.Manifest;
 import android.app.AppOpsManager;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.content.Intent;
 import android.net.Uri;
 import android.provider.Settings;
+import android.view.Gravity;
 import android.view.View;
+import android.webkit.WebView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import androidx.activity.OnBackPressedCallback;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -16,11 +21,19 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import com.getcapacitor.BridgeActivity;
+import com.google.android.gms.ads.AdRequest;
+import com.google.android.gms.ads.AdView;
+import com.google.android.gms.ads.MobileAds;
 import com.smartclean.app.plugins.FileCleanerPlugin;
 import com.smartclean.app.plugins.MemoryBoosterPlugin;
 import com.smartclean.app.plugins.DuplicateFinderPlugin;
 import com.smartclean.app.plugins.AppManagerPlugin;
+import com.smartclean.app.plugins.SecurityPlugin;
+import com.smartclean.app.plugins.AppUpdatePlugin;
 import com.smartclean.app.plugins.BillingManagerPlugin;
+import com.smartclean.app.security.EntitlementGuard;
+import com.smartclean.app.security.TrialGuard;
+import com.smartclean.app.service.NotificationService;
 
 public class MainActivity extends BridgeActivity {
 
@@ -30,25 +43,154 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(MemoryBoosterPlugin.class);
         registerPlugin(DuplicateFinderPlugin.class);
         registerPlugin(AppManagerPlugin.class);
+        registerPlugin(SecurityPlugin.class);
+        registerPlugin(AppUpdatePlugin.class);
         registerPlugin(BillingManagerPlugin.class);
         super.onCreate(savedInstanceState);
+
+        if (TrialGuard.isExpired(this)) {
+            blockExpiredTrial();
+            return;
+        }
+
         requestLegacyStoragePermission();
         setupBackButton();
         setupEdgeToEdgeInsets();
+        setupAds();
     }
 
-    // targetSdk 35+ forces edge-to-edge — the WebView draws under the status/nav
-    // bars by default, so fixed UI (header, bottom-nav) ends up unreachable behind
-    // the system nav bar. Padding the content root by the system bar insets restores
-    // the pre-35 "boxed" layout; windowBackground (@color/bg) already matches the
-    // app's CSS --bg so the reserved strips blend in with no visible seam.
-    private void setupEdgeToEdgeInsets() {
-        View content = findViewById(android.R.id.content);
-        ViewCompat.setOnApplyWindowInsetsListener(content, (v, windowInsets) -> {
-            Insets bars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars());
-            v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
-            return windowInsets;
+    // ─── AdMob (Free-tier banner) ──────────────────────────────────────────────
+    // Real Ad Unit ID belongs only to the "prod" flavor's release build — every other
+    // build (unlocked/debugbetatest, or any debug build) loads Google's official test
+    // banner instead, so QA/beta devices never generate real ad impressions/clicks
+    // against the live AdMob account (that pattern is what gets accounts flagged for
+    // invalid traffic).
+    private static final String TEST_BANNER_AD_UNIT_ID = "ca-app-pub-3940256099942544/6300978111";
+    private static final String PROD_BANNER_AD_UNIT_ID = "ca-app-pub-2214589251385894/1508601284";
+
+    private AdView adView;
+
+    private void setupAds() {
+        adView = findViewById(R.id.adView);
+        if (adView == null) return;
+        boolean useRealAds = !BuildConfig.DEBUG && !BuildConfig.IS_UNLOCKED_TEST_BUILD;
+        adView.setAdUnitId(useRealAds ? PROD_BANNER_AD_UNIT_ID : TEST_BANNER_AD_UNIT_ID);
+        MobileAds.initialize(this, status -> {});
+        // Read the persisted native entitlement (EntitlementGuard) directly rather than
+        // waiting for the WebView's JS to call setEntitlement() again on this launch —
+        // avoids a Pro user seeing the banner flash visible for a moment before it hides.
+        updateAdVisibility(new EntitlementGuard(this).isPro());
+    }
+
+    // Called by SecurityPlugin.setEntitlement() — the same single source of truth already
+    // used to gate every other Free/Pro-locked feature — so the ad shows/hides in lockstep
+    // with the rest of the app instead of drifting out of sync on its own logic.
+    public void updateAdVisibility(boolean isPro) {
+        if (adView == null) return;
+        runOnUiThread(() -> {
+            if (isPro) {
+                adView.setVisibility(View.GONE);
+            } else {
+                adView.setVisibility(View.VISIBLE);
+                adView.loadAd(new AdRequest.Builder().build());
+            }
         });
+    }
+
+    // Android 15+ (targetSdk 36) forces edge-to-edge, and CSS env(safe-area-inset-*)
+    // isn't reliably supported by every OEM's System WebView (seen bottom-nav still
+    // colliding with the gesture bar on ColorOS/Oppo even with viewport-fit=cover set).
+    // Reading the real inset in px straight from the platform and pushing it into the
+    // page as CSS custom properties works regardless of the WebView's own safe-area
+    // support — this is the source of truth; env() in style.css is just a fallback for
+    // the brief moment before this first fires.
+    private void setupEdgeToEdgeInsets() {
+        View root = getWindow().getDecorView();
+        ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
+            Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            float density = getResources().getDisplayMetrics().density;
+            int topPx = Math.round(bars.top / density);
+            int bottomPx = Math.round(bars.bottom / density);
+            WebView webView = getBridge() != null ? getBridge().getWebView() : null;
+            if (webView != null) {
+                String js = "document.documentElement.style.setProperty('--safe-top', '" + topPx + "px');"
+                          + "document.documentElement.style.setProperty('--safe-bottom', '" + bottomPx + "px');";
+                webView.post(() -> webView.evaluateJavascript(js, null));
+            }
+            return insets;
+        });
+        ViewCompat.requestApplyInsets(root);
+    }
+
+    // ─── 14-day beta-test trial enforcement (debugbetatest flavor only) ───────
+    // Replaces the loaded webview with a plain native "expired" screen (no app
+    // functionality reachable from here) and immediately requests the app's own
+    // uninstall via the system confirmation dialog — the closest a normal signed APK can
+    // get to "auto-delete" on a non-rooted device without being a device-owner/MDM app,
+    // since Android never lets an app silently uninstall itself without that one user tap.
+    // Re-checked on every onResume() too, so an already-running app gets shut out the
+    // moment the deadline passes, not just on a fresh launch.
+    // onCreate() and the onResume() that immediately follows it both call this before
+    // finishAffinity() actually tears the activity down — guard so the uninstall dialog
+    // isn't requested twice back-to-back on a single launch.
+    private boolean trialBlockHandled = false;
+
+    private void blockExpiredTrial() {
+        if (trialBlockHandled) return;
+        trialBlockHandled = true;
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            getBridge().getWebView().stopLoading();
+            getBridge().getWebView().loadUrl("about:blank");
+        }
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setGravity(Gravity.CENTER);
+        layout.setBackgroundColor(Color.parseColor("#1a1a1a"));
+        int pad = (int) (32 * getResources().getDisplayMetrics().density);
+        layout.setPadding(pad, pad, pad, pad);
+
+        TextView title = new TextView(this);
+        title.setText("Masa uji coba telah berakhir");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(20);
+        title.setGravity(Gravity.CENTER);
+
+        TextView body = new TextView(this);
+        body.setText("Beta test build ini sudah melewati batas 14 hari dan tidak dapat "
+                + "digunakan lagi. Aplikasi akan meminta untuk dihapus dari perangkat ini.");
+        body.setTextColor(Color.LTGRAY);
+        body.setTextSize(14);
+        body.setGravity(Gravity.CENTER);
+        body.setPadding(0, pad / 2, 0, 0);
+
+        layout.addView(title);
+        layout.addView(body);
+        setContentView(layout);
+
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                finishAffinity();
+            }
+        });
+
+        requestSelfUninstall();
+    }
+
+    private void requestSelfUninstall() {
+        try {
+            Intent intent = new Intent(Intent.ACTION_DELETE);
+            intent.setData(Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+        } catch (Exception ignored) {
+            // No Package Installer available to handle ACTION_DELETE — the block screen
+            // above still keeps the app unusable even if the uninstall prompt can't show.
+        }
+        // Whether the tester confirms or cancels that system dialog, this process should
+        // not keep running as a usable app — finish so the next launch re-triggers the
+        // exact same block+prompt instead of leaving anything interactive on screen.
+        finishAffinity();
     }
 
     // Each special-access Settings screen is attempted at most ONCE per app process
@@ -67,6 +209,11 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onResume() {
         super.onResume();
+        if (TrialGuard.isExpired(this)) {
+            blockExpiredTrial();
+            return;
+        }
+        NotificationService.requestRebindAsync(this);
         if (!manageStoragePromptShown) {
             manageStoragePromptShown = true;
             if (!requestManageStoragePermission()) return; // Settings screen just launched — sequence the next one on the following resume
@@ -75,6 +222,19 @@ public class MainActivity extends BridgeActivity {
             usageAccessPromptShown = true;
             requestUsageAccessPermission();
         }
+        if (adView != null) adView.resume();
+    }
+
+    @Override
+    public void onPause() {
+        if (adView != null) adView.pause();
+        super.onPause();
+    }
+
+    @Override
+    public void onDestroy() {
+        if (adView != null) adView.destroy();
+        super.onDestroy();
     }
 
     // Android 6-10 (API 23-29) gate raw filesystem access (Environment.getExternalStorageDirectory())

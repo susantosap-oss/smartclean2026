@@ -1,5 +1,11 @@
 apply plugin: 'com.android.application'
 
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace "com.smartclean.app"
     compileSdkVersion rootProject.ext.compileSdkVersion
@@ -7,11 +13,58 @@ android {
         applicationId "com.smartclean.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "1.26.0"
+        versionCode 13
+        versionName "1.0.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    buildFeatures {
+        buildConfig true
+    }
+    // SmartClean ships as ONE app ("public") with a real Free/Pro feature split built in
+    // (see DEVELOP.md Phase 2) — there is no separate "Pro APK". "unlocked" is a second,
+    // internal-only build for QA to eyeball every Pro-locked screen without purchasing/
+    // toggling anything; it must never be distributed publicly, hence the distinct app
+    // name/icon/package so it can't be mistaken for the real release build even installed
+    // side by side on the same test device.
+    flavorDimensions "variant"
+    productFlavors {
+        // Named "prod" rather than "public" — the latter is a Groovy/Java reserved word and
+        // unsafe as a Gradle DSL container name. This is the real release build: same app
+        // name/icon/package as what ships to users.
+        prod {
+            dimension "variant"
+            resValue "string", "app_name", "SmartClean"
+            buildConfigField "boolean", "IS_UNLOCKED_TEST_BUILD", "false"
+            buildConfigField "boolean", "IS_TIME_LIMITED_BUILD", "false"
+            buildConfigField "long", "TRIAL_EXPIRY_TIMESTAMP_MS", "0L"
+        }
+        unlocked {
+            dimension "variant"
+            applicationIdSuffix ".unlocked"
+            versionNameSuffix "-unlocked"
+            resValue "string", "app_name", "SmartClean (Unlocked Test)"
+            buildConfigField "boolean", "IS_UNLOCKED_TEST_BUILD", "true"
+            buildConfigField "boolean", "IS_TIME_LIMITED_BUILD", "false"
+            buildConfigField "long", "TRIAL_EXPIRY_TIMESTAMP_MS", "0L"
+        }
+        // External beta-test build: same "everything unlocked" entitlement as `unlocked`,
+        // PLUS a 14-day self-destruct so it's safe to hand to outside testers (other device
+        // brands/OEMs) instead of only trusted internal QA. See TrialGuard for the enforcement
+        // (native-side, checked on every launch — not just a JS flag a tester could inspect).
+        // The 14-day window is measured from BUILD time (baked in below), not first install,
+        // so every tester who receives the same APK gets the same hard deadline.
+        debugbetatest {
+            dimension "variant"
+            applicationIdSuffix ".betatest"
+            versionNameSuffix "-betatest"
+            resValue "string", "app_name", "SmartClean (Beta Test)"
+            buildConfigField "boolean", "IS_UNLOCKED_TEST_BUILD", "true"
+            buildConfigField "boolean", "IS_TIME_LIMITED_BUILD", "true"
+            buildConfigField "long", "TRIAL_EXPIRY_TIMESTAMP_MS",
+                    "${System.currentTimeMillis() + 14L * 24 * 3600 * 1000}L"
         }
     }
     signingConfigs {
@@ -20,6 +73,14 @@ android {
             storePassword 'android'
             keyAlias 'androiddebugkey'
             keyPassword 'android'
+        }
+        if (keystorePropertiesFile.exists()) {
+            release {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
         }
     }
     buildTypes {
@@ -30,8 +91,12 @@ android {
             applicationIdSuffix ".dev"
         }
         release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            }
         }
     }
     compileOptions {
@@ -51,8 +116,10 @@ dependencies {
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
-    implementation "com.android.billingclient:billing:$billingVersion"
     implementation project(':capacitor-android')
+    implementation "com.google.android.play:app-update:2.1.0"
+    implementation "com.google.android.gms:play-services-ads:23.+"
+    implementation "com.android.billingclient:billing:$billingVersion"
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
@@ -60,6 +127,16 @@ dependencies {
 }
 
 apply from: 'capacitor.build.gradle'
+
+// Rename the debugbetatest output so the file handed to outside testers is unambiguous
+// (default Gradle naming would be "app-debugbetatest-debug.apk").
+android.applicationVariants.all { variant ->
+    if (variant.flavorName == 'debugbetatest') {
+        variant.outputs.all { output ->
+            outputFileName = "debugbetatest.apk"
+        }
+    }
+}
 
 try {
     def servicesJSON = file('google-services.json')

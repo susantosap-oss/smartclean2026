@@ -48,6 +48,13 @@
         android:enableOnBackInvokedCallback="true"
         tools:targetApi="28">
 
+        <!-- AdMob (Free-tier banner) — real App ID; non-prod flavors still load Google's
+             test ad unit at runtime (see MainActivity.setupAds()), so this ID being the
+             same across flavors doesn't risk serving real ads from QA/beta devices. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-2214589251385894~7857553063"/>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

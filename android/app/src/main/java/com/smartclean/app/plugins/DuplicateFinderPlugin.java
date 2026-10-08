@@ -94,6 +94,16 @@ public class DuplicateFinderPlugin extends Plugin {
         }).start();
     }
 
+    // KNOWN GAP (not gated natively, unlike FileCleanerPlugin/AppManagerPlugin's Pro-locked
+    // methods): Duplicate Finder's Free tier isn't an all-or-nothing lock — it's windowed
+    // (photos-only scope, first DUP_FREE_GROUP_CAP groups only, see src/js/app.js
+    // visibleDupGroups()). Replicating that windowing natively would mean duplicating the
+    // whole duplicate-scan result here just to re-validate which paths were "supposed" to
+    // be visible, which is out of scope for this pass. A modder who patches app.js to widen
+    // dupSelected beyond visibleDupGroups() can still delete extra duplicate files on a
+    // Free install — lower severity than the other native gaps closed elsewhere in this
+    // pass (it only ever deletes genuine duplicates the user already has, never unlocks an
+    // otherwise-inaccessible feature), but it is a real, deliberately-left gap.
     @PluginMethod
     public void deleteFiles(PluginCall call) {
         JSArray pathsArr = call.getArray("paths");

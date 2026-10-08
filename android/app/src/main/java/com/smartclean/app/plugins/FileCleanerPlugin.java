@@ -81,6 +81,25 @@ public class FileCleanerPlugin extends Plugin {
     // WhatsApp Business/Database(s)), e.g. "msgstore-2026-08-25.1.db.crypt14".
     private static final String DB_BACKUP_EXT = ".db.crypt14";
 
+    // Telegram media roots. Unlike WhatsApp, Telegram's actual chat/message database lives
+    // in the app's private storage (Android/data/org.telegram.messenger/...), which scoped
+    // storage blocks any third-party app from reading regardless of permissions granted —
+    // same wall documented on scanJunkFiles() for Browser/App cache. What IS reachable is
+    // Telegram's own shared-storage media folders (received photos/videos/docs/voice notes,
+    // including group chat media), both the legacy top-level layout and the Android 11+
+    // scoped-storage layout under Android/media/org.telegram.messenger/.
+    private static final String[][] TG_ROOTS = {
+        { "Telegram",                                   "Telegram" },
+        { "Android/media/org.telegram.messenger/Telegram", "Telegram" },
+    };
+
+    private static final long DEFAULT_BIG_FILE_MIN_BYTES = 100L * 1024 * 1024;
+    private static final List<String> APK_EXT = Arrays.asList(".apk");
+    // Top-level folders skipped entirely when walking for empty-folder / big-file /
+    // download-cleanup scans — "Android" holds other apps' data/obb dirs that apps expect
+    // to exist even when empty (orphaned ones are already handled by scanOrphanedAppData()).
+    private static final List<String> WALK_SKIP_TOP = Arrays.asList("Android");
+
     // ─── Scan All Junk ────────────────────────────────────────────────────────
     // Used to also scan "App Cache" (all installed apps), "Browser Cache" and "Game
     // Cache" here, but Android's scoped storage (enforced since Android 11) blocks any
@@ -103,15 +122,13 @@ public class FileCleanerPlugin extends Plugin {
                 long junkSize   = totals.junk + scanOrphanedAppData();
                 long msgSize    = sizeDbBackups(totals.dbFiles);
                 int  notifCount = getNotifCount();
+                NotificationService.forceRebindIfNeeded(getContext());
                 boolean notifGranted = NotificationService.instance != null;
 
                 JSObject doneProgress = new JSObject();
                 doneProgress.put("percent", 100);
                 doneProgress.put("stage", "done");
                 notifyListeners("scanProgress", doneProgress);
-
-                Log.e(TAG, "SCAN RESULT: tmp=" + tmpSize + " msg=" + msgSize + " junk=" + junkSize
-                    + " notif=" + notifCount + " notifSvcConnected=" + notifGranted);
 
                 JSObject result = new JSObject();
                 JSObject data = new JSObject();
@@ -148,7 +165,6 @@ public class FileCleanerPlugin extends Plugin {
                     }
                 }
 
-                Log.e(TAG, "cleanJunkFiles types=" + types);
                 final AtomicInteger progress = new AtomicInteger(0);
                 boolean doTmp  = types.contains("tmp");
                 boolean doMsg  = types.contains("msg");
@@ -157,15 +173,13 @@ public class FileCleanerPlugin extends Plugin {
                 if (doTmp || doMsg || doJunk) {
                     CleanTotals ct = deleteCombinedRoot(doTmp, doJunk, progress);
                     freed += ct.freed;
-                    Log.e(TAG, "root walk done freed=" + freed);
-                    if (doMsg)  { freed += pruneDbBackups(ct.dbFiles); Log.e(TAG, "msg done freed="+freed); }
-                    if (doJunk) { freed += cleanOrphanedAppData();     Log.e(TAG, "junk done freed="+freed); }
+                    if (doMsg)  freed += pruneDbBackups(ct.dbFiles);
+                    if (doJunk) freed += cleanOrphanedAppData();
                 }
                 bumpProgress(progress, 90, "root", "cleanProgress");
 
-                if (types.contains("notif")) { dismissAllNotifications(); bumpProgress(progress, 96, "notif", "cleanProgress"); Log.e(TAG, "notif done"); }
+                if (types.contains("notif")) { dismissAllNotifications(); bumpProgress(progress, 96, "notif", "cleanProgress"); }
                 bumpProgress(progress, 100, "done", "cleanProgress");
-                Log.e(TAG, "cleanJunkFiles DONE freed=" + freed);
 
                 JSObject res = new JSObject();
                 res.put("freedBytes", freed);
@@ -178,11 +192,27 @@ public class FileCleanerPlugin extends Plugin {
     }
 
     // ─── Delete specific file list ────────────────────────────────────────────
+    // "feature" identifies which cleaner this delete came from (bigfile/apk/download/
+    // screenrec/telegram/camera/wa/…) so EntitlementGuard can independently re-check the
+    // SAME Free/Pro rule the JS layer already enforced — closing the gap where a modder
+    // patches/hooks app.js to skip the JS check and calls this method directly. A request
+    // with no "feature" (or one EntitlementGuard doesn't recognize as Pro-gated) is treated
+    // as a non-gated cleaner (e.g. plain junk cleanup) and allowed through unchanged.
     @PluginMethod
     public void deleteFiles(PluginCall call) {
         JSArray pathsArr = call.getArray("paths");
+        String feature = call.getString("feature");
         new Thread(() -> {
             try {
+                if (feature != null) {
+                    List<String> paths = new ArrayList<>();
+                    if (pathsArr != null) {
+                        for (int i = 0; i < pathsArr.length(); i++) paths.add(pathsArr.getString(i));
+                    }
+                    boolean allowed = new com.smartclean.app.security.EntitlementGuard(getContext())
+                            .isFeatureAllowed(feature, paths.size(), paths);
+                    if (!allowed) { call.reject("PRO_REQUIRED"); return; }
+                }
                 long freed = 0;
                 if (pathsArr != null) {
                     for (int i = 0; i < pathsArr.length(); i++) {
@@ -208,7 +238,6 @@ public class FileCleanerPlugin extends Plugin {
     public void scanWAMedia(PluginCall call) {
         String type   = call.getString("type", "video");
         long cutoffMs = call.getLong("cutoffMs", 0L);
-        Log.e(TAG, "scanWAMedia type=" + type + " cutoffMs=" + cutoffMs + " now=" + System.currentTimeMillis());
 
         new Thread(() -> {
             try {
@@ -225,6 +254,14 @@ public class FileCleanerPlugin extends Plugin {
                 // case and are therefore different strings.
                 java.util.Set<String> seenDirs = new java.util.HashSet<>();
 
+                // Unlike scanRootCombined()/walkCombined() (junk scan), this walk previously
+                // reported nothing to JS until it fully finished — a WA folder with a large
+                // accumulated "Sent"/"Statuses" history (common on devices with high storage
+                // use) could take a long time with zero UI feedback, reading as "stuck" even
+                // though it was still working. Reuse the same asymptotic-progress pattern here.
+                final AtomicInteger progress = new AtomicInteger(0);
+                final AtomicLong visited = new AtomicLong(0);
+
                 for (String[] app : WA_APPS) {
                     String mediaRoot = app[0];
                     String prefix    = app[1];
@@ -236,44 +273,50 @@ public class FileCleanerPlugin extends Plugin {
                     try { dirKey = dir.getCanonicalPath().toLowerCase(java.util.Locale.ROOT); }
                     catch (Exception e) { dirKey = dir.getAbsolutePath().toLowerCase(java.util.Locale.ROOT); }
                     boolean isDup = exists && !seenDirs.add(dirKey);
-                    File[] listed = (exists && !isDup) ? dir.listFiles() : null;
-                    Log.e(TAG, "scanWAMedia dir=" + dir.getAbsolutePath()
-                        + " exists=" + exists + " dup=" + isDup
-                        + " listedCount=" + (listed != null ? listed.length : -1));
-                    if (!exists || isDup || listed == null) continue;
+                    boolean listable = exists && !isDup && dir.listFiles() != null;
+                    if (!listable) continue;
 
-                    int matchedExt = 0, matchedCutoff = 0;
-                    for (File f : listed) {
-                        if (!f.isFile()) continue;
-                        if (!matchesMediaType(f.getName(), type)) continue;
-                        matchedExt++;
-                        if (cutoffMs > 0 && f.lastModified() >= cutoffMs) continue;
-                        matchedCutoff++;
-                        if (!seenPaths.add(f.getAbsolutePath())) continue;
-
-                        JSObject item = new JSObject();
-                        item.put("name",   f.getName());
-                        item.put("path",   f.getAbsolutePath());
-                        item.put("size",   f.length());
-                        item.put("dateMs", f.lastModified());
-                        item.put("source", source);
-                        files.put(item);
-                        Log.e(TAG, "scanWAMedia MATCH name=" + f.getName() + " size=" + f.length()
-                            + " lastModified=" + f.lastModified());
-                    }
-                    Log.e(TAG, "scanWAMedia dir=" + dir.getName()
-                        + " matchedExt=" + matchedExt + " passedCutoff=" + matchedCutoff);
+                    // Recurse (not a flat listFiles()) so per-type "Sent"/"Private" subfolders —
+                    // WhatsApp puts media YOU sent in e.g. "WhatsApp Images/Sent", which is often
+                    // sizeable — get scanned too instead of silently skipped as a non-file entry.
+                    collectWaMedia(dir, type, cutoffMs, source, seenPaths, files, 0, visited, progress);
                 }
+                bumpProgress(progress, 100, "wa", "scanProgress");
 
                 JSObject res = new JSObject();
                 res.put("files", files);
-                Log.e(TAG, "scanWAMedia TOTAL files=" + files.length());
                 call.resolve(res);
             } catch (Exception e) {
                 Log.e(TAG, "scanWAMedia ERROR", e);
                 call.reject("WA scan error: " + e.getMessage());
             }
         }).start();
+    }
+
+    // Recurses into subfolders (e.g. "Sent", "Private") instead of a flat listFiles(),
+    // since those can hold a sizeable chunk of a WA media folder's real content.
+    private void collectWaMedia(File dir, String type, long cutoffMs, String source,
+                                 java.util.Set<String> seenPaths, JSArray out, int depth,
+                                 AtomicLong visited, AtomicInteger progress) {
+        if (dir == null || !dir.exists() || depth > MAX_SCAN_DEPTH) return;
+        File[] listed = dir.listFiles();
+        if (listed == null) return;
+        for (File f : listed) {
+            long v = visited.incrementAndGet();
+            bumpProgress(progress, asymptoticPercent(v, 97), "wa", "scanProgress");
+            if (f.isDirectory()) { collectWaMedia(f, type, cutoffMs, source, seenPaths, out, depth + 1, visited, progress); continue; }
+            if (!matchesMediaType(f.getName(), type)) continue;
+            if (cutoffMs > 0 && f.lastModified() >= cutoffMs) continue;
+            if (!seenPaths.add(f.getAbsolutePath())) continue;
+
+            JSObject item = new JSObject();
+            item.put("name",   f.getName());
+            item.put("path",   f.getAbsolutePath());
+            item.put("size",   f.length());
+            item.put("dateMs", f.lastModified());
+            item.put("source", source);
+            out.put(item);
+        }
     }
 
     // ─── Scan Camera/Gallery Media ────────────────────────────────────────────
@@ -322,6 +365,261 @@ public class FileCleanerPlugin extends Plugin {
         }
     }
 
+    // ─── Scan Big Files (> threshold, default 100MB) ─────────────────────────
+    @PluginMethod
+    public void scanBigFiles(PluginCall call) {
+        long minBytes = call.getLong("minBytes", DEFAULT_BIG_FILE_MIN_BYTES);
+        new Thread(() -> {
+            try {
+                JSArray files = new JSArray();
+                File root = getExternalRoot();
+                File[] top = root.exists() ? root.listFiles() : null;
+                if (top != null) {
+                    for (File t : top) {
+                        if (WALK_SKIP_TOP.contains(t.getName())) continue;
+                        walkAndCollect(t, 0, f -> f.length() >= minBytes, files);
+                    }
+                }
+                JSObject res = new JSObject();
+                res.put("files", files);
+                call.resolve(res);
+            } catch (Exception e) {
+                Log.e(TAG, "scanBigFiles", e);
+                call.reject("Big file scan error: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    // ─── Scan APK installer files ─────────────────────────────────────────────
+    @PluginMethod
+    public void scanApkFiles(PluginCall call) {
+        new Thread(() -> {
+            try {
+                JSArray files = new JSArray();
+                File root = getExternalRoot();
+                File[] top = root.exists() ? root.listFiles() : null;
+                if (top != null) {
+                    for (File t : top) {
+                        if (WALK_SKIP_TOP.contains(t.getName())) continue;
+                        walkAndCollect(t, 0, f -> {
+                            String name = f.getName().toLowerCase();
+                            for (String ext : APK_EXT) { if (name.endsWith(ext)) return true; }
+                            return false;
+                        }, files);
+                    }
+                }
+                JSObject res = new JSObject();
+                res.put("files", files);
+                call.resolve(res);
+            } catch (Exception e) {
+                Log.e(TAG, "scanApkFiles", e);
+                call.reject("APK scan error: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    // ─── Scan Download folder for files older than cutoffMs ──────────────────
+    @PluginMethod
+    public void scanDownloadOld(PluginCall call) {
+        long cutoffMs = call.getLong("cutoffMs", 0L);
+        new Thread(() -> {
+            try {
+                JSArray files = new JSArray();
+                for (String dirName : new String[]{ "Download", "Downloads" }) {
+                    File dir = new File(getExternalRoot(), dirName);
+                    if (!dir.exists()) continue;
+                    walkAndCollect(dir, 0, f -> cutoffMs <= 0 || f.lastModified() < cutoffMs, files);
+                }
+                JSObject res = new JSObject();
+                res.put("files", files);
+                call.resolve(res);
+            } catch (Exception e) {
+                Log.e(TAG, "scanDownloadOld", e);
+                call.reject("Download scan error: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    // ─── Scan screen recording videos ─────────────────────────────────────────
+    @PluginMethod
+    public void scanScreenRecordings(PluginCall call) {
+        new Thread(() -> {
+            try {
+                JSArray files = new JSArray();
+                java.util.Set<String> seen = new java.util.HashSet<>();
+                List<String> dirs = Arrays.asList(
+                    "Movies/Screen Recordings", "DCIM/Screen Recordings",
+                    "Movies", "DCIM", "Pictures/Screen Recordings"
+                );
+                for (String dirPath : dirs) {
+                    File dir = new File(getExternalRoot(), dirPath);
+                    if (!dir.exists()) continue;
+                    File[] listed = dir.listFiles();
+                    if (listed == null) continue;
+                    for (File f : listed) {
+                        if (!f.isFile() || !isScreenRecording(f.getName())) continue;
+                        if (!seen.add(f.getAbsolutePath())) continue;
+                        JSObject item = new JSObject();
+                        item.put("name",   f.getName());
+                        item.put("path",   f.getAbsolutePath());
+                        item.put("size",   f.length());
+                        item.put("dateMs", f.lastModified());
+                        files.put(item);
+                    }
+                }
+                JSObject res = new JSObject();
+                res.put("files", files);
+                call.resolve(res);
+            } catch (Exception e) {
+                Log.e(TAG, "scanScreenRecordings", e);
+                call.reject("Screen recording scan error: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    private boolean isScreenRecording(String name) {
+        String n = name.toLowerCase();
+        boolean isVideo = n.endsWith(".mp4") || n.endsWith(".mkv") || n.endsWith(".3gp") || n.endsWith(".webm");
+        if (!isVideo) return false;
+        return n.contains("screenrecord") || n.contains("screen_recording") || n.contains("screen-recording")
+            || n.contains("screen recording");
+    }
+
+    // ─── Scan Empty Folders ────────────────────────────────────────────────────
+    @PluginMethod
+    public void scanEmptyFolders(PluginCall call) {
+        new Thread(() -> {
+            try {
+                JSArray folders = new JSArray();
+                File root = getExternalRoot();
+                File[] top = root.exists() ? root.listFiles() : null;
+                if (top != null) {
+                    for (File t : top) {
+                        if (WALK_SKIP_TOP.contains(t.getName())) continue;
+                        collectEmptyFolders(t, 0, folders);
+                    }
+                }
+                JSObject res = new JSObject();
+                res.put("folders", folders);
+                call.resolve(res);
+            } catch (Exception e) {
+                Log.e(TAG, "scanEmptyFolders", e);
+                call.reject("Empty folder scan error: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    // Bottom-up: a folder only counts as empty once its own children (if any) have already
+    // been checked/reported, so a folder that contains nothing but other empty folders is
+    // itself reported too (not hidden behind its likewise-empty children).
+    private boolean collectEmptyFolders(File dir, int depth, JSArray out) {
+        if (dir == null || !dir.exists() || depth > MAX_SCAN_DEPTH) return false;
+        File[] children = dir.listFiles();
+        if (children == null) return false;
+        if (children.length == 0) {
+            JSObject item = new JSObject();
+            item.put("name",   dir.getName());
+            item.put("path",   dir.getAbsolutePath());
+            item.put("size",   0);
+            item.put("dateMs", dir.lastModified());
+            out.put(item);
+            return true;
+        }
+        boolean allChildrenEmptyDirs = true;
+        for (File c : children) {
+            if (c.isDirectory()) {
+                if (!collectEmptyFolders(c, depth + 1, out)) allChildrenEmptyDirs = false;
+            } else {
+                allChildrenEmptyDirs = false;
+            }
+        }
+        if (allChildrenEmptyDirs) {
+            JSObject item = new JSObject();
+            item.put("name",   dir.getName());
+            item.put("path",   dir.getAbsolutePath());
+            item.put("size",   0);
+            item.put("dateMs", dir.lastModified());
+            out.put(item);
+            return true;
+        }
+        return false;
+    }
+
+    // ─── Scan Telegram Media (Images/Video/Documents/Audio) ──────────────────
+    // Telegram Cleaner has no free tier at all (PRO_LOCKED_CARDS.telegram blocks even
+    // opening the accordion in JS) — gated here too so a modder can't reach real device
+    // data by calling this method directly, skipping the JS-side accordion gate entirely.
+    @PluginMethod
+    public void scanTelegramMedia(PluginCall call) {
+        if (!new com.smartclean.app.security.EntitlementGuard(getContext()).isFeatureAllowed("telegram", 1, null)) {
+            call.reject("PRO_REQUIRED");
+            return;
+        }
+        String type   = call.getString("type", "video");
+        long cutoffMs = call.getLong("cutoffMs", 0L);
+
+        new Thread(() -> {
+            try {
+                JSArray files = new JSArray();
+                java.util.Set<String> seenPaths = new java.util.HashSet<>();
+                java.util.Set<String> seenDirs  = new java.util.HashSet<>();
+                String subFolder = getWASubfolder("Telegram", type);
+
+                for (String[] rootPair : TG_ROOTS) {
+                    File dir = new File(getExternalRoot(), rootPair[0] + "/" + subFolder);
+                    if (!dir.exists()) continue;
+                    String dirKey;
+                    try { dirKey = dir.getCanonicalPath().toLowerCase(java.util.Locale.ROOT); }
+                    catch (Exception e) { dirKey = dir.getAbsolutePath().toLowerCase(java.util.Locale.ROOT); }
+                    if (!seenDirs.add(dirKey)) continue;
+
+                    File[] listed = dir.listFiles();
+                    if (listed == null) continue;
+                    for (File f : listed) {
+                        if (!f.isFile() || !matchesMediaType(f.getName(), type)) continue;
+                        if (cutoffMs > 0 && f.lastModified() >= cutoffMs) continue;
+                        if (!seenPaths.add(f.getAbsolutePath())) continue;
+
+                        JSObject item = new JSObject();
+                        item.put("name",   f.getName());
+                        item.put("path",   f.getAbsolutePath());
+                        item.put("size",   f.length());
+                        item.put("dateMs", f.lastModified());
+                        item.put("source", "telegram");
+                        files.put(item);
+                    }
+                }
+                JSObject res = new JSObject();
+                res.put("files", files);
+                call.resolve(res);
+            } catch (Exception e) {
+                Log.e(TAG, "scanTelegramMedia", e);
+                call.reject("Telegram scan error: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    // Generic recursive collector shared by scanBigFiles/scanApkFiles/scanDownloadOld.
+    private interface FileMatch { boolean test(File f); }
+
+    private void walkAndCollect(File dir, int depth, FileMatch matcher, JSArray out) {
+        if (dir == null || !dir.exists() || depth > MAX_SCAN_DEPTH) return;
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File f : files) {
+            if (f.isDirectory()) {
+                walkAndCollect(f, depth + 1, matcher, out);
+            } else if (matcher.test(f)) {
+                JSObject item = new JSObject();
+                item.put("name",   f.getName());
+                item.put("path",   f.getAbsolutePath());
+                item.put("size",   f.length());
+                item.put("dateMs", f.lastModified());
+                out.put(item);
+            }
+        }
+    }
+
     // ─── Clear Notifications ──────────────────────────────────────────────────
     @PluginMethod
     public void clearNotifications(PluginCall call) {
@@ -342,7 +640,49 @@ public class FileCleanerPlugin extends Plugin {
         call.resolve(new JSObject());
     }
 
-    // ─── Scan Recently Deleted (MediaStore IS_TRASHED) ────────────────────────
+    // Recently Deleted also has to cover OEM/gallery-app recycle bins that never go through
+    // MediaStore's official IS_TRASHED flow at all — Samsung My Files, MIUI Gallery/Security,
+    // and several generic file managers keep their own hidden trash folder directly under
+    // shared storage (not Android/data, so MANAGE_EXTERNAL_STORAGE can read it) instead of
+    // registering the delete with MediaStore. Missing these is exactly why a device-level
+    // "Cleaner OS" can report real trash size that this app's MediaStore-only query reports
+    // as 0 — a candidate-name scan across common storage roots picks those up too.
+    private static final List<String> HIDDEN_TRASH_NAMES = Arrays.asList(
+        ".Trash", ".trash", ".trashed", ".Trash-1000",
+        ".recently-deleted", ".RecycleBin", ".recycle"
+    );
+    private static final List<String> HIDDEN_TRASH_PARENTS = Arrays.asList(
+        "", "DCIM", "Pictures", "Movies", "Download"
+    );
+
+    private long sizeHiddenTrashDirs() {
+        long size = 0;
+        File root = getExternalRoot();
+        for (String parent : HIDDEN_TRASH_PARENTS) {
+            for (String name : HIDDEN_TRASH_NAMES) {
+                File dir = parent.isEmpty() ? new File(root, name) : new File(root, parent + "/" + name);
+                if (dir.exists() && dir.isDirectory()) size += getFolderSize(dir);
+            }
+        }
+        return size;
+    }
+
+    private long cleanHiddenTrashDirs() {
+        long freed = 0;
+        File root = getExternalRoot();
+        for (String parent : HIDDEN_TRASH_PARENTS) {
+            for (String name : HIDDEN_TRASH_NAMES) {
+                File dir = parent.isEmpty() ? new File(root, name) : new File(root, parent + "/" + name);
+                if (dir.exists() && dir.isDirectory()) {
+                    freed += getFolderSize(dir);
+                    deleteRecursiveDir(dir);
+                }
+            }
+        }
+        return freed;
+    }
+
+    // ─── Scan Recently Deleted (MediaStore IS_TRASHED + OEM hidden trash folders) ─────
     @PluginMethod
     public void scanRecentlyDeleted(PluginCall call) {
         new Thread(() -> {
@@ -367,6 +707,7 @@ public class FileCleanerPlugin extends Plugin {
                         finally { cursor.close(); }
                     }
                 }
+                size += sizeHiddenTrashDirs();
                 JSObject res = new JSObject();
                 res.put("sizeBytes", size);
                 res.put("count", count);
@@ -379,8 +720,14 @@ public class FileCleanerPlugin extends Plugin {
     }
 
     // ─── Clean Recently Deleted ────────────────────────────────────────────────
+    // Permanent-delete is Pro-only (scanning stays free) — gated natively for the same
+    // JS-bypass reason as deleteFiles()/scanTelegramMedia() above.
     @PluginMethod
     public void cleanRecentlyDeleted(PluginCall call) {
+        if (!new com.smartclean.app.security.EntitlementGuard(getContext()).isFeatureAllowed("recentlyDeleted", 1, null)) {
+            call.reject("PRO_REQUIRED");
+            return;
+        }
         new Thread(() -> {
             try {
                 long freed = 0; int deleted = 0;
@@ -417,6 +764,7 @@ public class FileCleanerPlugin extends Plugin {
                         } finally { cursor.close(); }
                     }
                 }
+                freed += cleanHiddenTrashDirs();
                 JSObject res = new JSObject();
                 res.put("freedBytes", freed);
                 res.put("deletedCount", deleted);

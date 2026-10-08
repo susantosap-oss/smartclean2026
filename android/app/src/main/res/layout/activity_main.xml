@@ -9,4 +9,17 @@
     <WebView
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
+
+    <!-- Free-tier banner — docked at the real bottom edge, landing in the space the
+         WebView's own CSS (.ad-banner-slot) already reserves via its ad-h variable.
+         Starts hidden; MainActivity.updateAdVisibility() reveals it for Free users once
+         entitlement state is known (native SharedPreferences, read before the WebView's
+         JS finishes loading), so Pro users never see it flash on. -->
+    <com.google.android.gms.ads.AdView
+        android:id="@+id/adView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:visibility="gone"
+        app:adSize="BANNER"/>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

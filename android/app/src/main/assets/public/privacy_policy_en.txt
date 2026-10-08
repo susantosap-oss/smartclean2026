@@ -1,0 +1,38 @@
+PRIVACY POLICY
+Effective Date: September 5, 2026
+
+This Privacy Policy explains how we manage, process, and protect user data in our mobile application: SmartClean. We are fully committed to protecting your privacy in accordance with Indonesia's Personal Data Protection Law (UU PDP No. 27 of 2022) and Google Play Store policies.
+
+1. DATA COLLECTION AND STORAGE (LOCAL STORAGE)
+Our entire app is designed around local (client-side) processing. We do not collect, store, process, or upload your personal data or content to any external server we operate. All operational data — including scan results, language preference, and purchase status — is stored securely inside your own device's internal memory.
+
+2. DEVICE PERMISSIONS
+SmartClean only requests the technical permissions strictly necessary to run its core function as a storage cleaner and optimizer:
+- Storage access (Storage / All Files Access, including photo/video/audio media) solely to scan, identify, and delete junk files/cache, duplicates, large files, and other files at your explicit command and consent — never uploaded to any server.
+- Notification Access (optional, revocable anytime in Settings) solely to show the count of active notifications and let you clear them from within the app.
+- Usage Access (optional) solely to detect rarely-used apps (Unused App Cleaner) and apps running in the background (Battery).
+- Local storage (localStorage) only to save your display preferences (e.g. language choice) and purchase status locally on your device.
+
+3. IN-APP PURCHASES
+Our app offers a one-time-purchase premium tier:
+- Payment Processing: All payment transactions are processed securely through Google Play Billing's official billing system.
+- Financial Data: We never access, collect, or store your sensitive financial information, such as credit card numbers, PINs, e-wallet credentials, or banking details.
+- Purchase Status: The system only verifies your license/purchase status from Google Play Store to unlock premium features on your device.
+
+4. THIRD-PARTY DATA SHARING
+We do not sell, rent, or share your personal data with any third party. Purchase transactions are fully subject to Google Play's Privacy Policy and the relevant payment provider used on your Google Play account.
+
+5. USER RIGHTS AND DATA DELETION
+In accordance with data-subject rights under Indonesia's Personal Data Protection Law, you have full control over your data:
+- You may delete all data stored within the app at any time via your device's Settings menu (Settings > Apps > Clear Data / Clear Storage).
+- Uninstalling the app automatically removes all local data associated with it from your device.
+
+6. CHANGES TO THIS PRIVACY POLICY
+We may update this Privacy Policy from time to time to reflect feature updates or applicable legal regulations. Any changes will be published on this page.
+
+7. DEVELOPER CONTACT
+If you have any questions about this Privacy Policy or how our app operates, you can reach us at:
+Support Email: ads.dev26@gmail.com
+Developer: ads dev Team
+
+(c) 2026 ads dev. All Rights Reserved.
